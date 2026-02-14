@@ -539,6 +539,101 @@ if (backToListBtn) {
     selectedSender = null;
     document.getElementById('receiver-code-entry').style.display = 'none';
     document.getElementById('receiver-setup').style.display = 'block';
+    
+    // Clear manual input fields if they were used
+    const manualIpInput = document.getElementById('manual-ip-input');
+    const manualPortInput = document.getElementById('manual-port-input');
+    if (manualIpInput) manualIpInput.value = '';
+    if (manualPortInput) manualPortInput.value = '';
+  });
+}
+
+// Connection mode toggle: Auto-Discover vs Manual Entry
+const autoDiscoverBtn = document.getElementById('auto-discover-btn');
+const manualConnectBtn = document.getElementById('manual-connect-btn');
+const autoDiscoverySection = document.getElementById('auto-discovery-section');
+const manualConnectionSection = document.getElementById('manual-connection-section');
+
+if (autoDiscoverBtn && manualConnectBtn) {
+  autoDiscoverBtn.addEventListener('click', () => {
+    // Switch to auto-discovery mode
+    autoDiscoverBtn.style.background = '#4caf50';
+    manualConnectBtn.style.background = '#666';
+    autoDiscoverySection.style.display = 'block';
+    manualConnectionSection.style.display = 'none';
+    
+    // Refresh sender list
+    discoverAvailableSenders();
+  });
+
+  manualConnectBtn.addEventListener('click', () => {
+    // Switch to manual mode
+    manualConnectBtn.style.background = '#4caf50';
+    autoDiscoverBtn.style.background = '#666';
+    autoDiscoverySection.style.display = 'none';
+    manualConnectionSection.style.display = 'block';
+  });
+}
+
+// Manual connection proceed button
+const manualProceedBtn = document.getElementById('manual-proceed-btn');
+if (manualProceedBtn) {
+  manualProceedBtn.addEventListener('click', () => {
+    const ipInput = document.getElementById('manual-ip-input');
+    const portInput = document.getElementById('manual-port-input');
+    
+    const ip = ipInput.value.trim();
+    const port = parseInt(portInput.value.trim(), 10);
+
+    // Validate inputs
+    if (!ip) {
+      alert('Please enter the sender IP address');
+      ipInput.focus();
+      return;
+    }
+
+    // Basic IP validation (IPv4)
+    const ipPattern = /^(\d{1,3}\.){3}\d{1,3}$/;
+    if (!ipPattern.test(ip)) {
+      alert('Invalid IP address format. Example: 192.168.1.100');
+      ipInput.focus();
+      return;
+    }
+
+    // Validate IP octet range
+    const octets = ip.split('.');
+    if (octets.some(octet => parseInt(octet, 10) > 255)) {
+      alert('Invalid IP address. Each number must be between 0-255');
+      ipInput.focus();
+      return;
+    }
+
+    if (!port || port < 1024 || port > 65535) {
+      alert('Please enter a valid port number (1024-65535)');
+      portInput.focus();
+      return;
+    }
+
+    // Create a virtual sender object for manual connection
+    selectedSender = {
+      name: `Manual: ${ip}:${port}`,
+      host: ip,
+      port: port,
+      addresses: [ip],
+      manual: true
+    };
+
+    console.log('Manual sender configured:', selectedSender);
+
+    // Proceed to code entry
+    document.getElementById('receiver-setup').style.display = 'none';
+    document.getElementById('receiver-code-entry').style.display = 'block';
+    document.getElementById('selected-sender-name').textContent = selectedSender.name;
+
+    // Clear and focus code input
+    const codeInput = document.getElementById('receiver-code-input');
+    codeInput.value = '';
+    setTimeout(() => codeInput.focus(), 100);
   });
 }
 

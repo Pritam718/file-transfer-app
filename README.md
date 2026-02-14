@@ -1,6 +1,7 @@
 # File Transfer App
 
-**A secure and fast peer-to-peer file transfer application built with Electron and TypeScript**
+**A secure and fast peer-to-peer file transfer application built with Electron
+and TypeScript**
 
 [![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue.svg)](https://www.typescriptlang.org/)
@@ -8,11 +9,16 @@
 
 ## ✨ Features
 
-- 🔐 **Secure Authentication** - 6-character connection codes (XXX-XXX format) for peer verification
-- 🔍 **Auto-Discovery** - Bonjour/mDNS automatic detection of senders on local network
-- 🚀 **Fast Transfer** - Direct TCP socket connections for high-speed file transfer
-- 📊 **Real-time Progress** - Live transfer progress with file size and percentage
-- 📁 **Multi-file Support** - Send multiple files sequentially with acknowledgment
+- 🔐 **Secure Authentication** - 6-character connection codes (XXX-XXX format)
+  for peer verification
+- 🔍 **Auto-Discovery** - Bonjour/mDNS automatic detection of senders on local
+  network
+- 🚀 **Fast Transfer** - Direct TCP socket connections for high-speed file
+  transfer
+- 📊 **Real-time Progress** - Live transfer progress with file size and
+  percentage
+- 📁 **Multi-file Support** - Send multiple files sequentially with
+  acknowledgment
 - 🔄 **Hot Reload** - Development mode with TypeScript watch and auto-restart
 - 💻 **Cross-Platform** - Works on Windows, macOS, and Linux
 - 🎨 **Modern UI** - Clean, intuitive interface with drag-and-drop support
@@ -56,6 +62,7 @@ INSTANCE_NAME=receiver npm run dev
 ## 📖 How It Works
 
 ### Sender Mode
+
 1. Click "Sender Mode"
 2. A 6-character connection code is generated (e.g., `ABC-123`)
 3. Share the code with the receiver
@@ -64,6 +71,7 @@ INSTANCE_NAME=receiver npm run dev
 6. Click "Send Files"
 
 ### Receiver Mode
+
 1. Click "Receiver Mode"
 2. App discovers available senders on the network
 3. Select a sender from the list
@@ -133,6 +141,7 @@ tests/                     # Test files
 ## 🔧 Architecture
 
 ### Connection Flow
+
 1. **Sender** starts TCP server on random port
 2. **Sender** publishes Bonjour service with hostname
 3. **Sender** generates secure 6-character connection code
@@ -143,6 +152,7 @@ tests/                     # Test files
 8. File transfer begins on authenticated channel
 
 ### File Transfer Protocol
+
 1. Sender sends `metadata` message (filename, size, file index)
 2. Sender streams file data in chunks
 3. Sender sends `file-end` delimiter
@@ -151,6 +161,7 @@ tests/                     # Test files
 6. Sender waits for acknowledgment before sending next file
 
 ### Security
+
 - Connection codes not logged or broadcast
 - 10-second authentication timeout
 - Context isolation enabled in renderer
@@ -197,17 +208,19 @@ export const WINDOW = {
   DEFAULT_HEIGHT: 800,
   MIN_WIDTH: 900,
   MIN_HEIGHT: 600,
-}
+};
 ```
 
 ## 📦 Building Distributables
 
 ### All Platforms
+
 ```bash
 npm run dist:all
 ```
 
 ### Specific Platform
+
 ```bash
 # Windows (NSIS installer + portable)
 npm run dist:win
@@ -224,21 +237,27 @@ Builds are output to the `release/` directory.
 ## 🐛 Troubleshooting
 
 ### Multiple Reload on File Change
-The app now uses `awaitWriteFinish` with 100ms debounce to prevent multiple reloads during TypeScript compilation.
+
+The app now uses `awaitWriteFinish` with 100ms debounce to prevent multiple
+reloads during TypeScript compilation.
 
 ### Two Instances Conflict
+
 Use `INSTANCE_NAME` environment variable to run multiple instances for testing:
+
 ```bash
 INSTANCE_NAME=sender npm run dev
 INSTANCE_NAME=receiver npm run dev
 ```
 
 ### No Senders Discovered
+
 - Ensure both devices are on the same network
 - Check firewall settings allow mDNS/Bonjour
 - Verify sender is in "Sender Mode" and waiting
 
 ### Authentication Fails
+
 - Verify connection code is entered correctly (format: XXX-XXX)
 - Code expires after 10 seconds of inactivity
 - Generate a new code if connection fails
@@ -250,6 +269,7 @@ ISC License - see [LICENSE](LICENSE) file for details.
 ## 👤 Author
 
 **Gopinath Bhowmick**
+
 - Email: gopinathbhowmick425@gmail.com
 - GitHub: [@dev-gopi](https://github.com/dev-gopi)
 
@@ -263,4 +283,19 @@ ISC License - see [LICENSE](LICENSE) file for details.
 
 ---
 
-For detailed documentation, refer to inline code comments and TypeScript type definitions.
+For detailed documentation, refer to inline code comments and TypeScript type
+
+- GitHub: [@dev-gopi](https://github.com/dev-gopi)
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+---
+
+For detailed documentation, refer to inline code comments and TypeScript type
+definitions.
