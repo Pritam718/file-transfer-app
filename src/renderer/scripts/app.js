@@ -539,7 +539,7 @@ if (backToListBtn) {
     selectedSender = null;
     document.getElementById('receiver-code-entry').style.display = 'none';
     document.getElementById('receiver-setup').style.display = 'block';
-    
+
     // Clear manual input fields if they were used
     const manualIpInput = document.getElementById('manual-ip-input');
     const manualPortInput = document.getElementById('manual-port-input');
@@ -561,7 +561,7 @@ if (autoDiscoverBtn && manualConnectBtn) {
     manualConnectBtn.style.background = '#666';
     autoDiscoverySection.style.display = 'block';
     manualConnectionSection.style.display = 'none';
-    
+
     // Refresh sender list
     discoverAvailableSenders();
   });
@@ -581,7 +581,7 @@ if (manualProceedBtn) {
   manualProceedBtn.addEventListener('click', () => {
     const ipInput = document.getElementById('manual-ip-input');
     const portInput = document.getElementById('manual-port-input');
-    
+
     const ip = ipInput.value.trim();
     const port = parseInt(portInput.value.trim(), 10);
 
@@ -602,7 +602,7 @@ if (manualProceedBtn) {
 
     // Validate IP octet range
     const octets = ip.split('.');
-    if (octets.some(octet => parseInt(octet, 10) > 255)) {
+    if (octets.some((octet) => parseInt(octet, 10) > 255)) {
       alert('Invalid IP address. Each number must be between 0-255');
       ipInput.focus();
       return;
@@ -620,7 +620,7 @@ if (manualProceedBtn) {
       host: ip,
       port: port,
       addresses: [ip],
-      manual: true
+      manual: true,
     };
 
     console.log('Manual sender configured:', selectedSender);

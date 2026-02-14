@@ -128,6 +128,25 @@
                 <button class="copy-btn" data-copy="connection-code">📋 Copy</button>
               </div>
             </div>
+            <div class="detail-item" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #333;">
+              <p style="color: #888; font-size: 0.9em; margin-bottom: 10px;">
+                <strong>For Manual Connection:</strong>
+              </p>
+            </div>
+            <div class="detail-item">
+              <label>IP Address:</label>
+              <div class="detail-value">
+                <span id="sender-ip" class="code-display">Loading...</span>
+                <button class="copy-btn" data-copy="sender-ip">📋 Copy</button>
+              </div>
+            </div>
+            <div class="detail-item">
+              <label>Port:</label>
+              <div class="detail-value">
+                <span id="sender-port" class="code-display">Loading...</span>
+                <button class="copy-btn" data-copy="sender-port">📋 Copy</button>
+              </div>
+            </div>
           </div>
           <div class="status-message">
             <span class="status-icon">⏳</span>
@@ -167,18 +186,10 @@
         <div id="receiver-setup">
           <!-- Connection Method Toggle -->
           <div style="display: flex; gap: 10px; margin-bottom: 20px; justify-content: center">
-            <button
-              id="auto-discover-btn"
-              class="action-btn"
-              style="flex: 1; background: #4caf50"
-            >
+            <button id="auto-discover-btn" class="action-btn" style="flex: 1; background: #4caf50">
               🔍 Auto-Discover
             </button>
-            <button
-              id="manual-connect-btn"
-              class="action-btn"
-              style="flex: 1; background: #666"
-            >
+            <button id="manual-connect-btn" class="action-btn" style="flex: 1; background: #666">
               ⌨️ Manual Entry
             </button>
           </div>
