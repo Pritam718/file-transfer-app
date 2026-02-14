@@ -1,6 +1,7 @@
 # File Transfer App
 
-**A secure and fast file transfer application built with Electron and TypeScript**
+**A secure and fast file transfer application built with Electron and
+TypeScript**
 
 [![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue.svg)](https://www.typescriptlang.org/)
@@ -9,10 +10,12 @@
 ## 🚀 Quick Start
 
 ### Prerequisites
+
 - Node.js (v18 or higher)
 - npm or yarn
 
 ### Installation
+
 ```bash
 # Install dependencies
 npm install
@@ -26,22 +29,22 @@ npm run dev
 
 ## 📦 Available Scripts
 
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Start development with hot reload |
-| `npm run build` | Compile TypeScript to JavaScript |
-| `npm start` | Build and start application |
-| `npm test` | Run all tests |
-| `npm run test:coverage` | Run tests with coverage report |
-| `npm run lint` | Check code quality |
-| `npm run lint:fix` | Auto-fix linting issues |
-| `npm run format` | Format code with Prettier |
-| `npm run validate` | Run lint, type-check, and tests |
-| `npm run dist` | Build distributable for current platform |
-| `npm run dist:win` | Build for Windows |
-| `npm run dist:mac` | Build for macOS |
-| `npm run dist:linux` | Build for Linux |
-| `npm run dist:all` | Build for all platforms |
+| Command                 | Description                              |
+| ----------------------- | ---------------------------------------- |
+| `npm run dev`           | Start development with hot reload        |
+| `npm run build`         | Compile TypeScript to JavaScript         |
+| `npm start`             | Build and start application              |
+| `npm test`              | Run all tests                            |
+| `npm run test:coverage` | Run tests with coverage report           |
+| `npm run lint`          | Check code quality                       |
+| `npm run lint:fix`      | Auto-fix linting issues                  |
+| `npm run format`        | Format code with Prettier                |
+| `npm run validate`      | Run lint, type-check, and tests          |
+| `npm run dist`          | Build distributable for current platform |
+| `npm run dist:win`      | Build for Windows                        |
+| `npm run dist:mac`      | Build for macOS                          |
+| `npm run dist:linux`    | Build for Linux                          |
+| `npm run dist:all`      | Build for all platforms                  |
 
 ## 🛠️ Tech Stack
 
@@ -90,6 +93,7 @@ Coverage thresholds: 70% for branches, functions, lines, and statements.
 ## 🔧 Configuration
 
 Environment variables are configured in `.env` file:
+
 - `NODE_ENV` - Environment (development/production)
 - `APP_NAME` - Application name
 - `PORT` - Default port for file transfer
@@ -108,4 +112,9 @@ ISC License - see [LICENSE](LICENSE) file for details.
 
 ---
 
-For detailed documentation, troubleshooting, and advanced configuration, refer to the inline code comments and TypeScript type definitions.
+For detailed documentation, troubleshooting, and advanced configuration, refer
+
+---
+
+For detailed documentation, troubleshooting, and advanced configuration, refer
+to the inline code comments and TypeScript type definitions.
