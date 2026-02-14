@@ -344,6 +344,24 @@ senderModeBtn.addEventListener('click', async () => {
   }
 });
 
+// Toggle Manual Connection Details
+const toggleManualDetailsBtn = document.getElementById('toggle-manual-details');
+const manualConnectionDetails = document.getElementById('manual-connection-details');
+
+if (toggleManualDetailsBtn && manualConnectionDetails) {
+  toggleManualDetailsBtn.addEventListener('click', () => {
+    const isHidden = manualConnectionDetails.style.display === 'none';
+
+    if (isHidden) {
+      manualConnectionDetails.style.display = 'block';
+      toggleManualDetailsBtn.innerHTML = '🔧 Hide Manual Connection Details';
+    } else {
+      manualConnectionDetails.style.display = 'none';
+      toggleManualDetailsBtn.innerHTML = '🔧 Show Manual Connection Details';
+    }
+  });
+}
+
 // ============================================================================
 // RECEIVER MODE
 // ============================================================================

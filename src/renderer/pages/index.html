@@ -128,23 +128,37 @@
                 <button class="copy-btn" data-copy="connection-code">📋 Copy</button>
               </div>
             </div>
-            <div class="detail-item" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #333;">
-              <p style="color: #888; font-size: 0.9em; margin-bottom: 10px;">
-                <strong>For Manual Connection:</strong>
-              </p>
+            <div class="detail-item" style="margin-top: 15px">
+              <button
+                id="toggle-manual-details"
+                class="action-btn"
+                style="width: 100%; background: #444; font-size: 0.9em; padding: 8px"
+              >
+                🔧 Show Manual Connection Details
+              </button>
             </div>
-            <div class="detail-item">
-              <label>IP Address:</label>
-              <div class="detail-value">
-                <span id="sender-ip" class="code-display">Loading...</span>
-                <button class="copy-btn" data-copy="sender-ip">📋 Copy</button>
+            <div id="manual-connection-details" style="display: none">
+              <div
+                class="detail-item"
+                style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #333"
+              >
+                <p style="color: #888; font-size: 0.9em; margin-bottom: 10px">
+                  <strong>For Manual Connection:</strong>
+                </p>
               </div>
-            </div>
-            <div class="detail-item">
-              <label>Port:</label>
-              <div class="detail-value">
-                <span id="sender-port" class="code-display">Loading...</span>
-                <button class="copy-btn" data-copy="sender-port">📋 Copy</button>
+              <div class="detail-item">
+                <label>IP Address:</label>
+                <div class="detail-value">
+                  <span id="sender-ip" class="code-display">Loading...</span>
+                  <button class="copy-btn" data-copy="sender-ip">📋 Copy</button>
+                </div>
+              </div>
+              <div class="detail-item">
+                <label>Port:</label>
+                <div class="detail-value">
+                  <span id="sender-port" class="code-display">Loading...</span>
+                  <button class="copy-btn" data-copy="sender-port">📋 Copy</button>
+                </div>
               </div>
             </div>
           </div>
