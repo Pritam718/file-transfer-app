@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;"
+    />
+    <title>File Transfer App</title>
+    <link rel="icon" type="image/svg+xml" href="../../public/assets/icon.svg" />
+    <link rel="stylesheet" href="../styles/main.css" />
+  </head>
+  <body>
+    <div class="header">
+      <img src="../../public/assets/icon.svg" alt="App Icon" class="app-icon" />
+      <h2 class="app-title">File Transfer App</h2>
+    </div>
+
+    <div class="container">
+      <div class="content">
+        <div class="icon-display">
+          <img src="../../public/assets/icon.svg" alt="File Transfer Icon" />
+        </div>
+        <h1>Welcome to File Transfer App</h1>
+        <p>Your secure and fast file transfer solution</p>
+
+        <div class="features">
+          <div class="feature" id="local-transfer-button">
+            <div class="feature-icon">💻</div>
+            <div class="feature-title">Local Transfer</div>
+          </div>
+          <div class="feature" id="remote-transfer-button">
+            <div class="feature-icon">🌐</div>
+            <div class="feature-title">Remote File Transfer</div>
+          </div>
+          <div class="feature" id="secure-transfer-button">
+            <div class="feature-icon">🔒</div>
+            <div class="feature-title">Remote Secure Transfer</div>
+          </div>
+          <div class="feature" id="help-button">
+            <div class="feature-icon">❓</div>
+            <div class="feature-title">Need Help?</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Help Modal -->
+    <div id="help-modal" class="modal">
+      <div class="modal-content">
+        <span class="close-modal" data-modal="help-modal">&times;</span>
+        <h2>Need Help?</h2>
+        <p>Get started with these quick tips:</p>
+        <div class="help-items">
+          <div class="help-item">
+            <span class="help-icon">📖</span>
+            <div class="help-content">
+              <h3>Documentation</h3>
+              <p>Check the README.md file for complete guide</p>
+            </div>
+          </div>
+          <div class="help-item">
+            <span class="help-icon">⌨️</span>
+            <div class="help-content">
+              <h3>Keyboard Shortcuts</h3>
+              <p>Ctrl+O to open files, Ctrl+S to save</p>
+            </div>
+          </div>
+          <div class="help-item">
+            <span class="help-icon">💡</span>
+            <div class="help-content">
+              <h3>Quick Tips</h3>
+              <p>Drag and drop files to transfer quickly</p>
+            </div>
+          </div>
+          <div class="help-item">
+            <span class="help-icon">🛠️</span>
+            <div class="help-content">
+              <h3>Support</h3>
+              <p>Contact: gopinathbhowmick425@gmsil.com</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Transfer Mode Selection Modal -->
+    <div id="mode-modal" class="modal">
+      <div class="modal-content">
+        <span class="close-modal" data-modal="mode-modal">&times;</span>
+        <h2>Choose Transfer Mode</h2>
+        <p>Are you sending or receiving files?</p>
+        <div class="mode-selection">
+          <div class="mode-option" id="sender-mode">
+            <div class="mode-icon">📤</div>
+            <h3>I'm Sender</h3>
+            <p>Send files to another device</p>
+          </div>
+          <div class="mode-option" id="receiver-mode">
+            <div class="mode-icon">📥</div>
+            <h3>I'm Receiver</h3>
+            <p>Receive files from sender</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sender Interface Modal -->
+    <div id="sender-modal" class="modal">
+      <div class="modal-content modal-large">
+        <span class="close-modal" data-modal="sender-modal">&times;</span>
+        <h2>📤 Sender Mode</h2>
+        <div id="sender-setup">
+          <p>Share this information with the receiver:</p>
+          <div class="connection-details">
+            <div class="detail-item">
+              <label>Device Name:</label>
+              <div class="detail-value">
+                <span id="service-name" class="code-display">Loading...</span>
+                <button class="copy-btn" data-copy="service-name">📋 Copy</button>
+              </div>
+            </div>
+            <div class="detail-item">
+              <label>Connection Code:</label>
+              <div class="detail-value">
+                <span id="connection-code" class="code-display">ABC-DEF</span>
+                <button class="copy-btn" data-copy="connection-code">📋 Copy</button>
+              </div>
+            </div>
+          </div>
+          <div class="status-message">
+            <span class="status-icon">⏳</span>
+            <span>Waiting for receiver to connect with valid code...</span>
+          </div>
+        </div>
+        <div id="sender-transfer" style="display: none">
+          <div class="transfer-status">
+            <span class="status-icon">✅</span>
+            <span>Connected! Ready to send files.</span>
+          </div>
+          <div class="file-drop-zone" id="file-drop-zone">
+            <div class="drop-icon">📁</div>
+            <h3>Drop Files Here</h3>
+            <p>or click to browse</p>
+            <input type="file" id="file-input" multiple hidden />
+          </div>
+          <div id="file-list" class="file-list"></div>
+          <button id="send-files-btn" class="action-btn" style="display: none">
+            🚀 Send Files
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Receiver Interface Modal -->
+    <div id="receiver-modal" class="modal">
+      <div class="modal-content modal-large">
+        <span class="close-modal" data-modal="receiver-modal">&times;</span>
+        <h2>📥 Receiver Mode</h2>
+        <div id="receiver-scanning" style="display: none">
+          <div class="status-message">
+            <span class="status-icon">🔍</span>
+            <span>Scanning for available senders...</span>
+          </div>
+        </div>
+        <div id="receiver-setup">
+          <p>Available senders on your network:</p>
+          <button id="refresh-senders-btn" class="action-btn" style="margin-bottom: 15px">
+            🔄 Refresh
+          </button>
+          <div id="sender-list" class="sender-list">
+            <!-- Senders will be populated here -->
+          </div>
+          <div id="no-senders" class="status-message" style="display: none; margin-top: 15px">
+            <span class="status-icon">⚠️</span>
+            <span>No senders found. Make sure sender is running.</span>
+          </div>
+        </div>
+        <div id="receiver-code-entry" style="display: none">
+          <p>Selected sender: <strong id="selected-sender-name"></strong></p>
+          <div class="input-group">
+            <label for="receiver-code-input">Enter Connection Code:</label>
+            <input
+              type="text"
+              id="receiver-code-input"
+              placeholder="ABC-DEF"
+              class="input-field"
+              style="text-transform: uppercase"
+            />
+          </div>
+          <div class="input-group">
+            <label for="save-location">Save Files To:</label>
+            <div class="file-path-selector">
+              <input
+                type="text"
+                id="save-location"
+                placeholder="Choose folder..."
+                class="input-field"
+                readonly
+              />
+              <button id="browse-folder-btn" class="browse-btn">📂 Browse</button>
+            </div>
+          </div>
+          <button id="connect-btn" class="action-btn">🔗 Connect</button>
+          <button
+            id="back-to-list-btn"
+            class="action-btn"
+            style="background: #666; margin-left: 10px"
+          >
+            ⬅️ Back
+          </button>
+        </div>
+        <div id="receiver-transfer" style="display: none">
+          <div class="transfer-status">
+            <span class="status-icon">✅</span>
+            <span>Connected to sender!</span>
+          </div>
+          <div class="receiving-area">
+            <div class="receiving-icon">📥</div>
+            <h3>Waiting for Files...</h3>
+            <p>Files will be saved to: <strong id="save-path-display"></strong></p>
+          </div>
+          <div id="received-files-list" class="file-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Real file transfer implementation -->
+    <script src="../scripts/app.js"></script>
+  </body>
+</html>

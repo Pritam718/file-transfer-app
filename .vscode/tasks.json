@@ -1,0 +1,172 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "type": "npm",
+      "script": "build",
+      "group": "build",
+      "problemMatcher": [
+        "$tsc"
+      ],
+      "label": "npm: build",
+      "detail": "tsc"
+    },
+    {
+      "type": "npm",
+      "script": "clean",
+      "group": "build",
+      "problemMatcher": [],
+      "label": "npm: clean",
+      "detail": "rm -rf dist"
+    },
+    {
+      "type": "npm",
+      "script": "type-check",
+      "group": "build",
+      "problemMatcher": [
+        "$tsc"
+      ],
+      "label": "npm: type-check",
+      "detail": "tsc --noEmit"
+    },
+    {
+      "label": "Build TypeScript (Watch)",
+      "type": "shell",
+      "command": "npm",
+      "args": [
+        "run",
+        "build",
+        "--",
+        "--watch"
+      ],
+      "group": "build",
+      "problemMatcher": [
+        "$tsc-watch"
+      ],
+      "isBackground": true,
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared",
+        "showReuseMessage": false
+      }
+    },
+    {
+      "label": "Clean and Build",
+      "dependsOn": [
+        "npm: clean",
+        "npm: build"
+      ],
+      "dependsOrder": "sequence",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "type": "npm",
+      "script": "dev",
+      "group": "none",
+      "problemMatcher": [],
+      "label": "npm: dev",
+      "detail": "cross-env NODE_ENV=development concurrently \"tsc -w\" \"electron .\""
+    },
+    {
+      "type": "npm",
+      "script": "dist",
+      "group": "none",
+      "problemMatcher": [],
+      "label": "npm: dist",
+      "detail": "npm run build && electron-builder"
+    },
+    {
+      "type": "npm",
+      "script": "dist:linux",
+      "group": "none",
+      "problemMatcher": [],
+      "label": "npm: dist:linux",
+      "detail": "npm run build && electron-builder --linux"
+    },
+    {
+      "type": "npm",
+      "script": "dist:win",
+      "group": "none",
+      "problemMatcher": [],
+      "label": "npm: dist:win",
+      "detail": "npm run build && electron-builder --win"
+    },
+    {
+      "type": "npm",
+      "script": "dist:mac",
+      "group": "none",
+      "problemMatcher": [],
+      "label": "npm: dist:mac",
+      "detail": "npm run build && electron-builder --mac"
+    },
+    {
+      "type": "npm",
+      "script": "test",
+      "group": "test",
+      "problemMatcher": [],
+      "label": "npm: test",
+      "detail": "jest"
+    },
+    {
+      "type": "npm",
+      "script": "test:watch",
+      "group": "test",
+      "isBackground": true,
+      "problemMatcher": [],
+      "label": "npm: test:watch",
+      "detail": "jest --watch"
+    },
+    {
+      "type": "npm",
+      "script": "test:coverage",
+      "group": "test",
+      "problemMatcher": [],
+      "label": "npm: test:coverage",
+      "detail": "jest --coverage",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "type": "npm",
+      "script": "lint",
+      "group": "none",
+      "problemMatcher": ["$eslint-stylish"],
+      "label": "npm: lint",
+      "detail": "eslint src tests --ext .ts"
+    },
+    {
+      "type": "npm",
+      "script": "lint:fix",
+      "group": "none",
+      "problemMatcher": ["$eslint-stylish"],
+      "label": "npm: lint:fix",
+      "detail": "eslint src tests --ext .ts --fix"
+    },
+    {
+      "type": "npm",
+      "script": "format",
+      "group": "none",
+      "problemMatcher": [],
+      "label": "npm: format",
+      "detail": "prettier --write"
+    },
+    {
+      "type": "npm",
+      "script": "validate",
+      "group": "build",
+      "problemMatcher": [],
+      "label": "npm: validate",
+      "detail": "lint + type-check + test",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    }
+  ]
+}

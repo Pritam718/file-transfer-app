@@ -1,0 +1,46 @@
+# Docker Compose for File Transfer App
+version: '3.8'
+
+services:
+  # Development environment
+  file-transfer-dev:
+    build:
+      context: .
+      target: development
+    container_name: file-transfer-dev
+    volumes:
+      - ./src:/app/src
+      - ./dist:/app/dist
+      - node_modules:/app/node_modules
+    environment:
+      - NODE_ENV=development
+      - DISPLAY=${DISPLAY}
+    # For X11 forwarding (Linux GUI)
+      - /tmp/.X11-unix:/tmp/.X11-unix
+    network_mode: host
+    stdin_open: true
+    tty: true
+
+  # Production build
+  file-transfer-prod:
+    build:
+      context: .
+      target: production
+    container_name: file-transfer-prod
+    environment:
+      - NODE_ENV=production
+    network_mode: host
+    restart: unless-stopped
+
+  # Test environment
+  file-transfer-test:
+    build:
+      context: .
+      target: test
+    container_name: file-transfer-test
+    volumes:
+      - ./src:/app/src
+      - ./test:/app/test
+
+volumes:
+  node_modules:
