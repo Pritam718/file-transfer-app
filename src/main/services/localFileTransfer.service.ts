@@ -94,6 +94,9 @@ export class LocalFileTransferService {
 
                       this.client = socket;
 
+                      // Stop advertising to prevent additional connections
+                      this.stopAdvertising();
+
                       // Send success acknowledgment to receiver
                       socket.write(JSON.stringify({ type: 'auth-success' }) + '\n');
 
@@ -143,6 +146,9 @@ export class LocalFileTransferService {
                 mode: 'sender',
                 reason: 'Socket error: ' + err.message,
               });
+              
+              // Restart advertising to allow new connections
+              this.startAdvertising();
             }
           });
 
@@ -158,6 +164,9 @@ export class LocalFileTransferService {
                 mode: 'sender',
                 reason: 'Receiver disconnected from the server',
               });
+              
+              // Restart advertising to allow new connections
+              this.startAdvertising();
             }
             this.client = null;
           });
@@ -209,6 +218,42 @@ export class LocalFileTransferService {
   }
 
   /**
+   * Start advertising via Bonjour (allows new connections)
+   */
+  private startAdvertising(): void {
+    if (this.bonjourService || !this.bonjour || !this.port) {
+      return; // Already advertising or not ready
+    }
+
+    try {
+      const hostname = os.hostname();
+      this.bonjourService = this.bonjour.publish({
+        name: hostname,
+        type: 'file-transfer',
+        port: this.port,
+        txt: {
+          hostname: hostname,
+          version: '1.0.0',
+        },
+      });
+      logger.success('Bonjour service re-published - now discoverable');
+    } catch (err: any) {
+      logger.warn('Failed to re-publish Bonjour service:', err.message);
+    }
+  }
+
+  /**
+   * Stop advertising via Bonjour (prevents new connections)
+   */
+  private stopAdvertising(): void {
+    if (this.bonjourService) {
+      this.bonjourService.stop();
+      this.bonjourService = null;
+      logger.info('Bonjour service unpublished - no longer discoverable');
+    }
+  }
+
+  /**
    * Stop sender mode
    */
   stopSender(): void {
@@ -216,11 +261,7 @@ export class LocalFileTransferService {
       this.client.destroy();
       this.client = null;
     }
-    if (this.bonjourService) {
-      this.bonjourService.stop();
-      this.bonjourService = null;
-      logger.info('Bonjour service unpublished');
-    }
+    this.stopAdvertising();
     if (this.server) {
       this.server.close();
       this.server = null;
