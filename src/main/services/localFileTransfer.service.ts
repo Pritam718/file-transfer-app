@@ -187,21 +187,7 @@ export class LocalFileTransferService {
           logger.info(`Sender server started on ${ip}:${this.port}`);
 
           // Publish Bonjour service for auto-discovery
-          try {
-            const hostname = os.hostname();
-            this.bonjourService = this.bonjour?.publish({
-              name: hostname,
-              type: 'file-transfer',
-              port: this.port,
-              txt: {
-                hostname: hostname,
-                version: '1.0.0',
-              },
-            });
-            logger.success('Bonjour service published for auto-discovery');
-          } catch (err: any) {
-            logger.warn('Failed to publish Bonjour service:', err.message);
-          }
+          this.startAdvertising();
 
           resolve({ ip, port: this.port, code: this.connectionCode, hostname: os.hostname() });
         });
