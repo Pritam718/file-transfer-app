@@ -146,7 +146,7 @@ export class LocalFileTransferService {
                 mode: 'sender',
                 reason: 'Socket error: ' + err.message,
               });
-              
+
               // Restart advertising to allow new connections
               this.startAdvertising();
             }
@@ -164,7 +164,7 @@ export class LocalFileTransferService {
                 mode: 'sender',
                 reason: 'Receiver disconnected from the server',
               });
-              
+
               // Restart advertising to allow new connections
               this.startAdvertising();
             }
