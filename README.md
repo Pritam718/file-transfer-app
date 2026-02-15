@@ -32,6 +32,46 @@ and TypeScript**
 
 ### Installation
 
+#### Option 1: Automated Setup (Recommended)
+
+For first-time setup, use the automated setup script:
+
+**Linux/Ubuntu:**
+
+```bash
+# Clone repository
+git clone https://github.com/dev-gopi/file-transfer-app.git
+cd file-transfer-app
+
+# Run setup script
+chmod +x setup.sh
+./setup.sh
+```
+
+**Windows:**
+
+```cmd
+REM Clone repository
+git clone https://github.com/dev-gopi/file-transfer-app.git
+cd file-transfer-app
+
+REM Run setup script
+setup.bat
+```
+
+The setup script will:
+
+- ✅ Check Node.js and npm versions
+- ✅ Install system dependencies (Linux only)
+- ✅ Install build helper packages
+- ✅ Install all Node.js dependencies
+- ✅ Build the project
+- ✅ Optionally run tests
+
+📚 For detailed setup instructions, see [SETUP.md](SETUP.md)
+
+#### Option 2: Manual Installation
+
 ```bash
 # Clone repository
 git clone https://github.com/dev-gopi/file-transfer-app.git
@@ -40,8 +80,8 @@ cd file-transfer-app
 # Install dependencies
 npm install
 
-# Copy environment file (optional)
-cp .env.example .env
+# Build the project
+npm run build
 
 # Start development
 npm run dev

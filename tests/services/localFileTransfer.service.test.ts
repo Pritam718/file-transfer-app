@@ -1,7 +1,7 @@
 import { LocalFileTransferService } from '../../src/main/services/localFileTransfer.service';
 
 // Mock dependencies
-jest.mock('../../src/utils/logger');
+jest.mock('../../src/main/utils/logger');
 
 describe('LocalFileTransferService', () => {
   let service: LocalFileTransferService;
