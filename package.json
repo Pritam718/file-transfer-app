@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "A secure and fast file transfer application built with Electron",
   "main": "dist/main/main.js",
+  "module": "CommonJS",
   "scripts": {
     "dev": "npm run build && cross-env NODE_ENV=development concurrently \"tsc -w\" \"electron .\"",
     "build": "tsc",

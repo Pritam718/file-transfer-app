@@ -16,7 +16,7 @@ import {
   TransferMetadata,
 } from '../interfaces/localFileTransfer.interface';
 import { formatFileSize, getLocalIPAddress } from '../lib/network.lib';
-import { IPC_CHANNELS, NETWORK } from '../utils/constants';
+import { IPC_CHANNELS } from '../utils/constants';
 import { logger } from '../utils/logger';
 
 export class LocalFileTransferService {
@@ -32,11 +32,12 @@ export class LocalFileTransferService {
   private receivedBytes: number = 0;
   private dataBuffer: Buffer = Buffer.alloc(0);
   private messageDelimiter: string = '\x00\x00\x00\x00';
-  private chunkSize: number = NETWORK.CHUNK_SIZE;
+  // private chunkSize: number = NETWORK.CHUNK_SIZE;
   private bonjour: Bonjour | null = null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private bonjourService: any = null;
   private fileSavedResolver: ((value: void) => void) | null = null;
+  private isStopping: boolean = false; // Flag to track intentional shutdown
 
   constructor(window: BrowserWindow) {
     this.mainWindow = window;
@@ -57,6 +58,7 @@ export class LocalFileTransferService {
   async startSender(): Promise<ConnectionInfo> {
     return new Promise((resolve, reject) => {
       try {
+        this.isStopping = false; // Reset flag when starting new sender
         this.connectionCode = this.generateConnectionCode();
         this.server = net.createServer((socket) => {
           logger.info('Receiver attempting to connect...');
@@ -156,8 +158,14 @@ export class LocalFileTransferService {
                 reason: 'Socket error: ' + err.message,
               });
 
-              // Restart advertising to allow new connections
-              this.startAdvertising();
+              // Only handle disconnect if not intentionally stopping
+              if (!this.isStopping) {
+                // Receiver disconnected due to error, stop advertising
+                this.stopAdvertising();
+              } else {
+                // this.startAdvertising();
+              }
+              // If isStopping is true, we're already shutting down
             }
           });
 
@@ -176,8 +184,14 @@ export class LocalFileTransferService {
                 reason: 'Receiver disconnected from the server',
               });
 
-              // Restart advertising to allow new connections
-              this.startAdvertising();
+              // Only handle disconnect if not intentionally stopping
+              if (!this.isStopping) {
+                // Receiver disconnected normally, stop advertising
+                this.stopAdvertising();
+              } else {
+                // this.startAdvertising();
+              }
+              // If isStopping is true, we're already shutting down
             }
             this.client = null;
           });
@@ -220,8 +234,8 @@ export class LocalFileTransferService {
    * Start advertising via Bonjour (allows new connections)
    */
   private startAdvertising(): void {
-    if (this.bonjourService || !this.bonjour || !this.port) {
-      return; // Already advertising or not ready
+    if (this.bonjourService || !this.bonjour || !this.port || this.isStopping) {
+      return; // Already advertising or not ready or intentionally stopping
     }
 
     try {
@@ -256,6 +270,8 @@ export class LocalFileTransferService {
    * Stop sender mode
    */
   stopSender(): void {
+    this.isStopping = true; // Set flag to prevent re-advertising
+
     if (this.client) {
       this.client.destroy();
       this.client = null;
@@ -300,6 +316,13 @@ export class LocalFileTransferService {
             port: service.port,
             hostname: service.txt?.hostname || service.name,
           });
+        });
+
+        browser.on('down', (service) => {
+          services.splice(
+            services.findIndex((s) => s.name === service.name),
+            1
+          );
         });
 
         browser.on('error', (err: any) => {
