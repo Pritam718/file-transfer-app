@@ -34,6 +34,7 @@ export class LocalFileTransferService {
   private messageDelimiter: string = '\x00\x00\x00\x00';
   private chunkSize: number = NETWORK.CHUNK_SIZE;
   private bonjour: Bonjour | null = null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private bonjourService: any = null;
   private fileSavedResolver: ((value: void) => void) | null = null;
 
@@ -78,7 +79,9 @@ export class LocalFileTransferService {
               const lines = message.split('\n');
 
               for (const line of lines) {
-                if (!line) continue;
+                if (!line) {
+                  continue;
+                }
 
                 try {
                   const json = JSON.parse(line);
@@ -142,7 +145,9 @@ export class LocalFileTransferService {
           socket.on('data', authHandler);
 
           socket.on('error', (err) => {
-            if (authTimeout) clearTimeout(authTimeout);
+            if (authTimeout) {
+              clearTimeout(authTimeout);
+            }
             logger.error('Socket error:', err.message);
             if (isAuthenticated) {
               this.mainWindow?.webContents.send(IPC_CHANNELS.TRANSFER_ERROR, err.message);
@@ -157,7 +162,9 @@ export class LocalFileTransferService {
           });
 
           socket.on('close', () => {
-            if (authTimeout) clearTimeout(authTimeout);
+            if (authTimeout) {
+              clearTimeout(authTimeout);
+            }
             if (isAuthenticated) {
               logger.warn('Receiver disconnected');
               this.mainWindow?.webContents.send(IPC_CHANNELS.CONNECTION_STATUS, {
@@ -176,7 +183,9 @@ export class LocalFileTransferService {
           });
 
           socket.on('end', () => {
-            if (authTimeout) clearTimeout(authTimeout);
+            if (authTimeout) {
+              clearTimeout(authTimeout);
+            }
             if (isAuthenticated) {
               logger.info('Receiver ended connection gracefully');
             }
@@ -339,7 +348,9 @@ export class LocalFileTransferService {
             const lines = message.split('\n');
 
             for (const line of lines) {
-              if (!line.trim()) continue;
+              if (!line.trim()) {
+                continue;
+              }
 
               try {
                 const json = JSON.parse(line);
@@ -531,7 +542,7 @@ export class LocalFileTransferService {
           } as FileProgress);
 
           // Send end marker and wait for receiver acknowledgment
-          setTimeout(async () => {
+          void setTimeout(() => {
             const endMarker = JSON.stringify({ type: 'file-end' });
             logger.info(`[SEND FILE] File data complete, sending file-end marker for ${fileName}`);
             this.client?.write(Buffer.from(endMarker + this.messageDelimiter));
@@ -540,7 +551,7 @@ export class LocalFileTransferService {
             );
 
             // Wait for receiver to save the file and send acknowledgment
-            await new Promise<void>((resolveAck) => {
+            void new Promise<void>((resolveAck) => {
               this.fileSavedResolver = resolveAck;
 
               // Timeout after 30 seconds
@@ -551,10 +562,10 @@ export class LocalFileTransferService {
                   resolve();
                 }
               }, 30000);
+            }).then(() => {
+              logger.info(`[SEND FILE] File confirmed saved by receiver: ${fileName}`);
+              resolve();
             });
-
-            logger.info(`[SEND FILE] File confirmed saved by receiver: ${fileName}`);
-            resolve();
           }, 100);
         });
 
@@ -579,6 +590,7 @@ export class LocalFileTransferService {
         `[PROCESS START] BufferSize: ${this.dataBuffer.length}, isReceiving: ${this.isReceiving}, currentFile: ${this.currentFileMetadata?.currentFile || 'none'}`
       );
 
+      // eslint-disable-next-line no-constant-condition
       while (true) {
         if (this.isReceiving && this.currentFileMetadata) {
           // We're receiving file data - read EXACT byte count from metadata
@@ -673,13 +685,13 @@ export class LocalFileTransferService {
 
               if (json.type === 'metadata') {
                 // Start receiving a new file
-                this.currentFileMetadata = json.data;
+                this.currentFileMetadata = json.data as TransferMetadata;
                 this.receivingBuffer = Buffer.alloc(0);
                 this.receivedBytes = 0;
                 this.isReceiving = true;
 
                 logger.info(
-                  `[METADATA RECEIVED] File ${json.data.currentFile}/${json.data.totalFiles}: ${json.data.fileName} (${formatFileSize(json.data.fileSize)})`
+                  `[METADATA RECEIVED] File ${Number(json.data.currentFile)}/${Number(json.data.totalFiles)}: ${String(json.data.fileName)} (${formatFileSize(Number(json.data.fileSize))})`
                 );
                 logger.info(`[METADATA] Setting isReceiving=true, will continue loop to read data`);
                 // Continue loop to start receiving file data

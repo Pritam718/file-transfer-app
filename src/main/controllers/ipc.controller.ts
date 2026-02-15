@@ -18,25 +18,27 @@ export function setupIPCHandlers(mainWindow: BrowserWindow): void {
   localTransferService = new LocalFileTransferService(mainWindow);
 
   // Start sender mode
-  ipcMain.handle(IPC_CHANNELS.START_SENDER, async (transferType) => {
+  ipcMain.handle(IPC_CHANNELS.START_SENDER, async (_event, _transferType?: string) => {
     try {
       logger.loading('Starting sender mode...');
       const result = await localTransferService!.startSender();
       logger.success('Sender mode started successfully');
       return result;
-    } catch (err: any) {
-      logger.error('Failed to start sender:', err.message);
+    } catch (err) {
+      const error = err as Error;
+      logger.error('Failed to start sender:', error.message);
       throw err;
     }
   });
 
   // Stop sender mode
-  ipcMain.handle(IPC_CHANNELS.STOP_SENDER, async (transferType) => {
+  ipcMain.handle(IPC_CHANNELS.STOP_SENDER, (_event, _transferType?: string) => {
     try {
-      await localTransferService!.stopSender();
+      localTransferService!.stopSender();
       return { success: true };
-    } catch (err: any) {
-      logger.error('Failed to stop sender:', err.message);
+    } catch (err) {
+      const error = err as Error;
+      logger.error('Failed to stop sender:', error.message);
       throw err;
     }
   });
@@ -67,20 +69,22 @@ export function setupIPCHandlers(mainWindow: BrowserWindow): void {
         await localTransferService!.connectToSender(ip, port, code, finalSaveDir);
 
         return { success: true, saveDir: finalSaveDir };
-      } catch (err: any) {
-        logger.error('Failed to connect to sender:', err.message);
+      } catch (err) {
+        const error = err as Error;
+        logger.error('Failed to connect to sender:', error.message);
         throw err;
       }
     }
   );
 
   // Disconnect receiver
-  ipcMain.handle(IPC_CHANNELS.DISCONNECT_RECEIVER, async () => {
+  ipcMain.handle(IPC_CHANNELS.DISCONNECT_RECEIVER, () => {
     try {
-      await localTransferService!.disconnectReceiver();
+      localTransferService!.disconnectReceiver();
       return { success: true };
-    } catch (err: any) {
-      logger.error('Failed to disconnect receiver:', err.message);
+    } catch (err) {
+      const error = err as Error;
+      logger.error('Failed to disconnect receiver:', error.message);
       throw err;
     }
   });
@@ -91,8 +95,9 @@ export function setupIPCHandlers(mainWindow: BrowserWindow): void {
       logger.loading('Preparing to send files...');
       await localTransferService!.sendFiles(filePaths);
       return { success: true };
-    } catch (err: any) {
-      logger.error('Failed to send files:', err.message);
+    } catch (err) {
+      const error = err as Error;
+      logger.error('Failed to send files:', error.message);
       throw err;
     }
   });
@@ -110,8 +115,9 @@ export function setupIPCHandlers(mainWindow: BrowserWindow): void {
       }
 
       return { canceled: false, filePaths: result.filePaths };
-    } catch (err: any) {
-      logger.error('Failed to select files:', err.message);
+    } catch (err) {
+      const error = err as Error;
+      logger.error('Failed to select files:', error.message);
       throw err;
     }
   });
@@ -129,8 +135,9 @@ export function setupIPCHandlers(mainWindow: BrowserWindow): void {
       }
 
       return { canceled: false, folderPath: result.filePaths[0] };
-    } catch (err: any) {
-      logger.error('Failed to select folder:', err.message);
+    } catch (err) {
+      const error = err as Error;
+      logger.error('Failed to select folder:', error.message);
       throw err;
     }
   });
@@ -141,22 +148,24 @@ export function setupIPCHandlers(mainWindow: BrowserWindow): void {
       const ip = getLocalIPAddress();
 
       return ip;
-    } catch (err: any) {
-      logger.error('Failed to get local IP:', err.message);
+    } catch (err) {
+      const error = err as Error;
+      logger.error('Failed to get local IP:', error.message);
       return 'localhost';
     }
   });
 
   // Discover file transfer services on network
-  ipcMain.handle(IPC_CHANNELS.DISCOVER_SERVICES, async () => {
+  ipcMain.handle(IPC_CHANNELS.DISCOVER_SERVICES, async (): Promise<unknown[]> => {
     try {
       logger.loading('Discovering file transfer services on network...');
       const services = await localTransferService!.discoverServices();
       logger.success(`Found ${services.length} service(s)`);
       return services;
-    } catch (err: any) {
-      logger.error('Failed to discover services:', err.message);
-      logger.error('Stack trace:', err.stack);
+    } catch (err) {
+      const error = err as Error;
+      logger.error('Failed to discover services:', error.message);
+      logger.error('Stack trace:', error.stack);
       throw err; // Throw the error so the client can see it
     }
   });

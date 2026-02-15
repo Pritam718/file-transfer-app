@@ -4,7 +4,13 @@
  */
 
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
-import { ElectronAPI } from '../types/electron';
+import {
+  ConnectionLostInfo,
+  ConnectionStatus,
+  ElectronAPI,
+  FileProgress,
+  ReceivedFile,
+} from '../types/electron';
 
 // IPC Channels - inlined to avoid module resolution issues in sandboxed preload
 const IPC_CHANNELS = {
@@ -64,23 +70,29 @@ contextBridge.exposeInMainWorld('electronAPI', {
   discoverServices: () => ipcRenderer.invoke(IPC_CHANNELS.DISCOVER_SERVICES),
 
   // Event listeners
-  onConnectionStatus: (callback: (status: any) => void) => {
-    ipcRenderer.on(IPC_CHANNELS.CONNECTION_STATUS, (_event, status) => callback(status));
+  onConnectionStatus: (callback: (status: ConnectionStatus) => void) => {
+    ipcRenderer.on(IPC_CHANNELS.CONNECTION_STATUS, (_event, status) =>
+      callback(status as ConnectionStatus)
+    );
   },
-  onConnectionLost: (callback: (info: any) => void) => {
-    ipcRenderer.on(IPC_CHANNELS.CONNECTION_LOST, (_event, info) => callback(info));
+  onConnectionLost: (callback: (info: ConnectionLostInfo) => void) => {
+    ipcRenderer.on(IPC_CHANNELS.CONNECTION_LOST, (_event, info) =>
+      callback(info as ConnectionLostInfo)
+    );
   },
-  onFileProgress: (callback: (progress: any) => void) => {
-    ipcRenderer.on(IPC_CHANNELS.TRANSFER_PROGRESS, (_event, progress) => callback(progress));
+  onFileProgress: (callback: (progress: FileProgress) => void) => {
+    ipcRenderer.on(IPC_CHANNELS.TRANSFER_PROGRESS, (_event, progress) =>
+      callback(progress as FileProgress)
+    );
   },
-  onFileReceived: (callback: (file: any) => void) => {
-    ipcRenderer.on(IPC_CHANNELS.FILE_RECEIVED, (_event, file) => callback(file));
+  onFileReceived: (callback: (file: ReceivedFile) => void) => {
+    ipcRenderer.on(IPC_CHANNELS.FILE_RECEIVED, (_event, file) => callback(file as ReceivedFile));
   },
   onTransferComplete: (callback: () => void) => {
     ipcRenderer.on(IPC_CHANNELS.TRANSFER_COMPLETE, () => callback());
   },
   onError: (callback: (error: string) => void) => {
-    ipcRenderer.on(IPC_CHANNELS.TRANSFER_ERROR, (_event, error) => callback(error));
+    ipcRenderer.on(IPC_CHANNELS.TRANSFER_ERROR, (_event, error) => callback(String(error)));
   },
 
   // Remove listeners

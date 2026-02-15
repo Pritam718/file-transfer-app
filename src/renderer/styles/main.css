@@ -675,3 +675,221 @@ body {
 .sender-list::-webkit-scrollbar-thumb:hover {
   background: #764ba2;
 }
+
+/* =========================
+   APPUI ALERT MODAL
+========================= */
+
+#appui-alert-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999;
+  animation: appuiFadeInOverlay 0.2s ease;
+}
+
+.appui-hidden {
+  display: none !important;
+}
+
+.appui-alert-box {
+  width: 420px;
+  max-width: 90vw;
+  background: linear-gradient(135deg, #1f1f2e 0%, #252538 100%);
+  color: #e0e0e0;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  animation: appuiFadeIn 0.3s ease;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.appui-alert-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: bold;
+  font-size: 18px;
+  margin-bottom: 16px;
+  color: #fff;
+}
+
+.appui-alert-message {
+  margin: 0 0 20px 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #d0d0d0;
+  white-space: pre-line;
+}
+
+.appui-alert-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.appui-alert-buttons button {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.appui-btn-primary {
+  background: #2196f3;
+  color: #fff;
+}
+
+.appui-btn-primary:hover {
+  background: #1e88e5;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(33, 150, 243, 0.4);
+}
+
+.appui-btn-danger {
+  background: #f44336;
+  color: #fff;
+}
+
+.appui-btn-danger:hover {
+  background: #e53935;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(244, 67, 54, 0.4);
+}
+
+#appui-alert-close {
+  background: transparent;
+  border: none;
+  color: #999;
+  font-size: 24px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+  transition: color 0.2s;
+}
+
+#appui-alert-close:hover {
+  color: #fff;
+}
+
+@keyframes appuiFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes appuiFadeInOverlay {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.appui-toast-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 99999;
+}
+
+.appui-toast {
+  min-width: 260px;
+  max-width: 380px;
+  background: #1e1e2f;
+  color: white;
+  padding: 14px 38px 14px 14px;
+  border-radius: 10px;
+  position: relative;
+  opacity: 0;
+  transform: translateY(20px);
+  transition: all 0.3s ease;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  user-select: none;
+}
+
+.appui-toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.appui-toast-message {
+  flex: 1;
+  font-size: 14px;
+  line-height: 1.4;
+  word-wrap: break-word;
+}
+
+.appui-toast-close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.appui-toast-close:hover {
+  opacity: 1;
+}
+
+.appui-toast-success {
+  border-left: 4px solid #4caf50;
+  background: linear-gradient(135deg, #1e1e2f 0%, #1f2f24 100%);
+}
+.appui-toast-error {
+  border-left: 4px solid #f44336;
+  background: linear-gradient(135deg, #1e1e2f 0%, #2f1f1f 100%);
+}
+.appui-toast-warn {
+  border-left: 4px solid #ff9800;
+  background: linear-gradient(135deg, #1e1e2f 0%, #2f281f 100%);
+}
+.appui-toast-info {
+  border-left: 4px solid #2196f3;
+  background: linear-gradient(135deg, #1e1e2f 0%, #1f2430 100%);
+}
+
+.appui-toast-action {
+  background: rgba(79, 195, 247, 0.15);
+  border: 1px solid #4fc3f7;
+  color: #4fc3f7;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 6px;
+  transition: all 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.appui-toast-action:hover {
+  background: rgba(79, 195, 247, 0.25);
+  border-color: #80d4fa;
+  color: #80d4fa;
+  transform: translateY(-1px);
+}

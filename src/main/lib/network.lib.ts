@@ -30,8 +30,9 @@ export function getLocalIPAddress(): string {
 
     logger.warn('No external IPv4 address found, using localhost');
     return 'localhost';
-  } catch (err: any) {
-    logger.error('Failed to get local IP:', err.message);
+  } catch (err) {
+    const error = err as Error;
+    logger.error('Failed to get local IP:', error.message);
     return 'localhost';
   }
 }

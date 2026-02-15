@@ -19,11 +19,12 @@ if (process.env.NODE_ENV === 'development') {
 // Enable hot reload in development
 if (process.env.NODE_ENV === 'development') {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
     const electronReload = require('electron-reload');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+    const electronPath = require(path.resolve(__dirname, '../../node_modules/electron'));
     electronReload(__dirname, {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      electron: require(path.resolve(__dirname, '../../node_modules/electron')),
+      electron: electronPath,
       hardResetMethod: 'exit',
       awaitWriteFinish: {
         stabilityThreshold: 100,
@@ -74,7 +75,7 @@ function createWindow() {
   const htmlPath = path.join(__dirname, '..', '..', 'src', 'renderer', 'pages', 'index.html');
 
   win
-    .loadFile(htmlPath)
+    .loadFile(htmlPath, { hash: 'main' })
     .then(() => logger.info('Application loaded successfully'))
     .catch((error) => logger.error('Failed to load application', error));
 

@@ -6,7 +6,11 @@
 // Check if electronAPI is available
 if (!window.electronAPI) {
   console.error('Electron API not available!');
-  alert('Application error: Electron API not loaded. Please restart the application.');
+  appuiAlert.show({
+    title: 'Application Error',
+    message: 'Electron API not loaded. Please restart the application.',
+    confirm: false,
+  });
 }
 
 // Modal elements
@@ -108,7 +112,11 @@ window.electronAPI.onConnectionLost((info) => {
     }
 
     // Show alert with full message
-    alert(message + '\n\n' + action);
+    appuiAlert.show({
+      title: 'Connection Lost',
+      message: message + '\n\n' + action,
+      confirm: false,
+    });
 
     // Reset UI based on mode
     resetConnectionUI(info.mode);
@@ -183,7 +191,11 @@ window.electronAPI.onError((error) => {
       'Please verify the IP address is correct.';
   }
 
-  alert(userMessage);
+  appuiAlert.show({
+    title: 'Transfer Error',
+    message: userMessage,
+    confirm: false,
+  });
 });
 
 // ============================================================================
@@ -191,8 +203,13 @@ window.electronAPI.onError((error) => {
 // ============================================================================
 
 function resetConnectionUI(mode) {
+  console.log('Resetting UI for mode:', mode);
+
+  // Reset global transfer state
+  isTransferring = false;
+
   if (mode === 'sender') {
-    // Reset sender UI
+    // Reset sender UI sections
     document.getElementById('sender-setup').style.display = 'block';
     document.getElementById('sender-transfer').style.display = 'none';
 
@@ -201,6 +218,9 @@ function resetConnectionUI(mode) {
     if (fileList) {
       fileList.innerHTML = '';
     }
+
+    // Show file-remove buttons again
+    document.querySelectorAll('.file-remove').forEach((el) => (el.style.display = 'inline'));
 
     // Reset send button
     if (sendFilesBtn) {
@@ -218,14 +238,22 @@ function resetConnectionUI(mode) {
     // Clear selected files
     selectedFilePaths = [];
   } else if (mode === 'receiver') {
-    // Reset receiver UI
+    // Reset receiver UI sections - hide all intermediate states
     document.getElementById('receiver-setup').style.display = 'block';
     document.getElementById('receiver-transfer').style.display = 'none';
+    document.getElementById('receiver-code-entry').style.display = 'none';
+    document.getElementById('receiver-scanning').style.display = 'none';
 
     // Clear received files list
     const receivedList = document.getElementById('received-files-list');
     if (receivedList) {
       receivedList.innerHTML = '';
+    }
+
+    // Clear sender list
+    const senderList = document.getElementById('sender-list');
+    if (senderList) {
+      senderList.innerHTML = '';
     }
 
     // Reset connect button
@@ -234,8 +262,26 @@ function resetConnectionUI(mode) {
       connectBtn.textContent = '🔗 Connect to Sender';
     }
 
-    // Clear save directory
-    saveDirectory = '';
+    // Clear code input field
+    const codeInput = document.getElementById('receiver-code-input');
+    if (codeInput) {
+      codeInput.value = '';
+    }
+
+    // Reset selected sender
+    selectedSender = null;
+
+    // Clear save directory (but keep cached path if available)
+    const cachedPath = localStorage.getItem('lastSavePath');
+    if (cachedPath) {
+      saveDirectory = cachedPath;
+      const saveLocationInput = document.getElementById('save-location');
+      if (saveLocationInput) {
+        saveLocationInput.value = cachedPath;
+      }
+    } else {
+      saveDirectory = '';
+    }
   }
 }
 
@@ -265,17 +311,18 @@ async function cleanupConnection() {
 
 // Close buttons
 document.querySelectorAll('.close-modal').forEach((btn) => {
-  btn.addEventListener('click', () => {
+  btn.addEventListener('click', async () => {
     const modalId = btn.getAttribute('data-modal');
     const modal = document.getElementById(modalId);
 
     // If closing sender or receiver modal while connected, warn user
     if ((modalId === 'sender-modal' || modalId === 'receiver-modal') && isConnected) {
-      const shouldClose = confirm(
-        '⚠️ Warning: You are still connected!\n\n' +
-          'Closing this window will disconnect the transfer session.\n\n' +
-          'Are you sure you want to close?'
-      );
+      const shouldClose = await appuiAlert.show({
+        title: '⚠️ Warning: You are still connected!',
+        message:
+          'Closing this window will disconnect the transfer session.\n\nAre you sure you want to close?',
+        confirm: true,
+      });
 
       if (!shouldClose) {
         return;
@@ -346,7 +393,7 @@ senderModeBtn.addEventListener('click', async () => {
     }
   } catch (error) {
     console.error('Failed to start sender:', error);
-    alert('Failed to start sender mode: ' + error.message);
+    appuiToast.error('Failed to start sender mode: ' + error.message, 5000);
     modals.sender.style.display = 'none';
     currentMode = null;
   }
@@ -392,9 +439,12 @@ async function remoteSender() {
   console.log('Starting REMOTE sender mode - internet transfer');
 
   // TODO: Implement relay server or WebRTC for remote transfers
-  alert(
-    '🌐 Remote Transfer\n\nThis feature allows file transfer over the internet.\n\nComing soon! Currently only local network transfer is supported.'
-  );
+  appuiAlert.show({
+    title: '🌐 Remote Transfer',
+    message:
+      'This feature allows file transfer over the internet.\n\nComing soon! Currently only local network transfer is supported.',
+    confirm: false,
+  });
 }
 
 async function secureSender() {
@@ -402,9 +452,12 @@ async function secureSender() {
   console.log('Starting SECURE sender mode - encrypted transfer');
 
   // TODO: Implement end-to-end encryption
-  alert(
-    '🔐 Secure Transfer\n\nThis feature adds end-to-end encryption to file transfers.\n\nComing soon! Current transfers use basic TCP without encryption.'
-  );
+  appuiAlert.show({
+    title: '🔐 Secure Transfer',
+    message:
+      'This feature adds end-to-end encryption to file transfers.\n\nComing soon! Current transfers use basic TCP without encryption.',
+    confirm: false,
+  });
 }
 
 // Toggle Manual Connection Details
@@ -458,7 +511,7 @@ receiverModeBtn.addEventListener('click', async () => {
   } catch (error) {
     currentMode = null;
     console.error('Failed to start receiver:', error);
-    alert('Failed to start receiver mode: ' + error.message);
+    appuiToast.error('Failed to start receiver mode: ' + error.message, 5000);
   }
 });
 
@@ -489,9 +542,12 @@ async function remoteReceiver() {
   console.log('Starting REMOTE receiver mode - internet transfer');
 
   // TODO: Implement relay server or WebRTC for remote transfers
-  alert(
-    '🌐 Remote Transfer\n\nThis feature allows file transfer over the internet.\n\nComing soon! Currently only local network transfer is supported.'
-  );
+  appuiAlert.show({
+    title: '🌐 Remote Transfer',
+    message:
+      'This feature allows file transfer over the internet.\n\nComing soon! Currently only local network transfer is supported.',
+    confirm: false,
+  });
 }
 
 async function secureReceiver() {
@@ -499,9 +555,12 @@ async function secureReceiver() {
   console.log('Starting SECURE receiver mode - encrypted transfer');
 
   // TODO: Implement end-to-end encryption
-  alert(
-    '🔐 Secure Transfer\n\nThis feature adds end-to-end encryption to file transfers.\n\nComing soon! Current transfers use basic TCP without encryption.'
-  );
+  appuiAlert.show({
+    title: '🔐 Secure Transfer',
+    message:
+      'This feature adds end-to-end encryption to file transfers.\n\nComing soon! Current transfers use basic TCP without encryption.',
+    confirm: false,
+  });
 }
 
 // Function to discover available senders
@@ -600,12 +659,12 @@ connectBtn.addEventListener('click', async () => {
   const currentSavePath = document.getElementById('save-location').value.trim();
 
   if (!code || code.length < 7) {
-    alert('Please enter the complete connection code (format: XXX-XXX)');
+    appuiToast.warn('Please enter the complete connection code (format: XXX-XXX)', 4000);
     return;
   }
 
   if (!selectedSender) {
-    alert('No sender selected. Please go back and select a sender.');
+    appuiToast.warn('No sender selected. Please go back and select a sender.', 4000);
     return;
   }
 
@@ -645,7 +704,11 @@ connectBtn.addEventListener('click', async () => {
         '❌ Invalid Connection Code\n\nThe code you entered does not match.\nPlease check the code and try again.';
     }
 
-    alert(errorMsg);
+    appuiAlert.show({
+      title: 'Connection Failed',
+      message: errorMsg,
+      confirm: false,
+    });
     connectBtn.textContent = '🔗 Connect';
     connectBtn.disabled = false;
   }
@@ -704,6 +767,63 @@ if (autoDiscoverBtn && manualConnectBtn) {
   });
 }
 
+function isValidIP(ip) {
+  const ipRegex =
+    /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/;
+  return ipRegex.test(ip);
+}
+
+function isValidPort(port) {
+  const num = Number(port);
+  return Number.isInteger(num) && num >= 0 && num <= 65535;
+}
+
+const manualIpInput = document.getElementById('manual-ip-input');
+const portInput = document.getElementById('manual-port-input');
+
+manualIpInput.addEventListener('input', (e) => {
+  const input = e.target;
+  const cursorPosition = input.selectionStart;
+
+  let value = input.value;
+
+  // Allow only digits and dots
+  value = value.replace(/[^0-9.]/g, '');
+
+  // Prevent multiple dots in a row
+  value = value.replace(/\.{2,}/g, '.');
+
+  // Limit to 3 dots
+  const parts = value.split('.');
+  if (parts.length > 4) {
+    value = parts.slice(0, 4).join('.');
+  }
+
+  input.value = value;
+
+  // Restore cursor position
+  input.setSelectionRange(cursorPosition, cursorPosition);
+
+  if (!isValidIP(input.value)) {
+    input.style.border = '2px solid red';
+  } else {
+    input.style.border = '2px solid green';
+  }
+});
+
+portInput.addEventListener('input', (e) => {
+  const input = e.target;
+
+  // Remove non-digits
+  input.value = input.value.replace(/\D/g, '');
+
+  if (!isValidPort(input.value)) {
+    input.style.border = '2px solid red';
+  } else {
+    input.style.border = '2px solid green';
+  }
+});
+
 // Manual connection proceed button
 const manualProceedBtn = document.getElementById('manual-proceed-btn');
 if (manualProceedBtn) {
@@ -716,15 +836,14 @@ if (manualProceedBtn) {
 
     // Validate inputs
     if (!ip) {
-      alert('Please enter the sender IP address');
+      appuiToast.warn('Please enter the sender IP address', 4000);
       ipInput.focus();
       return;
     }
 
     // Basic IP validation (IPv4)
-    const ipPattern = /^(\d{1,3}\.){3}\d{1,3}$/;
-    if (!ipPattern.test(ip)) {
-      alert('Invalid IP address format. Example: 192.168.1.100');
+    if (!isValidIP(ip)) {
+      appuiToast.warn('Invalid IP address format. Example: 192.168.1.100', 4000);
       ipInput.focus();
       return;
     }
@@ -732,13 +851,13 @@ if (manualProceedBtn) {
     // Validate IP octet range
     const octets = ip.split('.');
     if (octets.some((octet) => parseInt(octet, 10) > 255)) {
-      alert('Invalid IP address. Each number must be between 0-255');
+      appuiToast.warn('Invalid IP address. Each number must be between 0-255', 4000);
       ipInput.focus();
       return;
     }
 
     if (!port || port < 1024 || port > 65535) {
-      alert('Please enter a valid port number (1024-65535)');
+      appuiToast.warn('Please enter a valid port number (1024-65535)', 4000);
       portInput.focus();
       return;
     }
@@ -802,7 +921,7 @@ browseFolderBtn.addEventListener('click', async () => {
     }
   } catch (error) {
     console.error('Failed to select folder:', error);
-    alert('Failed to select folder: ' + error.message);
+    appuiToast.error('Failed to select folder: ' + error.message, 5000);
   }
 });
 
@@ -814,8 +933,9 @@ browseFolderBtn.addEventListener('click', async () => {
 fileDropZone.addEventListener('click', async () => {
   // Prevent file selection during active transfer
   if (isTransferring) {
-    alert(
-      '⚠️ Transfer in progress!\n\nPlease wait for the current transfer to complete before selecting new files.'
+    appuiToast.warn(
+      '⚠️ Transfer in progress! Please wait for the current transfer to complete before selecting new files.',
+      5000
     );
     return;
   }
@@ -848,7 +968,7 @@ fileDropZone.addEventListener('click', async () => {
     }
   } catch (error) {
     console.error('Failed to select files:', error);
-    alert('Failed to select files: ' + error.message);
+    appuiToast.error('Failed to select files: ' + error.message, 5000);
   }
 });
 
@@ -872,8 +992,9 @@ fileDropZone.addEventListener('drop', async (e) => {
 
   // Prevent file dropping during active transfer
   if (isTransferring) {
-    alert(
-      '⚠️ Transfer in progress!\n\nPlease wait for the current transfer to complete before adding new files.'
+    appuiToast.warn(
+      '⚠️ Transfer in progress! Please wait for the current transfer to complete before adding new files.',
+      5000
     );
     return;
   }
@@ -917,11 +1038,11 @@ fileDropZone.addEventListener('drop', async (e) => {
       console.log(`Dropped ${filePaths.length} new file(s), previous list cleared`);
     } else {
       console.warn('No valid file paths found in dropped files');
-      alert('Could not get file paths. Please use the "Browse" button instead.');
+      appuiToast.error('Could not get file paths. Please use the "Browse" button instead.', 5000);
     }
   } catch (error) {
     console.error('Error handling dropped files:', error);
-    alert('Failed to process dropped files: ' + error.message);
+    appuiToast.error('Failed to process dropped files: ' + error.message, 5000);
   }
 });
 
@@ -973,7 +1094,7 @@ document.getElementById('file-list').addEventListener('click', (e) => {
 // Send files - REAL IMPLEMENTATION
 sendFilesBtn.addEventListener('click', async () => {
   if (selectedFilePaths.length === 0) {
-    alert('No files selected');
+    appuiToast.warn('No files selected', 4000);
     return;
   }
 
@@ -989,7 +1110,7 @@ sendFilesBtn.addEventListener('click', async () => {
     console.log('Files sent successfully!');
   } catch (error) {
     console.error('Failed to send files:', error);
-    alert('Failed to send files: ' + error.message);
+    appuiToast.error('Failed to send files: ' + error.message, 5000);
     sendFilesBtn.textContent = '🚀 Send Files';
     sendFilesBtn.disabled = false;
     isTransferring = false; // Reset on error
@@ -1123,22 +1244,24 @@ function formatFileSize(bytes) {
 }
 
 // Close modals on outside click
-window.addEventListener('click', (event) => {
-  Object.entries(modals).forEach(([key, modal]) => {
+window.addEventListener('click', async (event) => {
+  for (const [key, modal] of Object.entries(modals)) {
     if (event.target === modal) {
       // If closing sender or receiver modal while connected, warn user
       if ((key === 'sender' || key === 'receiver') && isConnected) {
-        const shouldClose = confirm(
-          '⚠️ Warning: You are still connected!\n\n' +
-            'Closing this window will disconnect the transfer session.\n\n' +
-            'Are you sure you want to close?'
-        );
+        const shouldClose = await appuiAlert.show({
+          title: '⚠️ Warning: You are still connected!',
+          message:
+            'Closing this window will disconnect the transfer session.\n\nAre you sure you want to close?',
+          confirm: true,
+        });
 
         if (!shouldClose) {
           return;
         }
 
         // Cleanup connection
+        console.log('Cleaning up connection before closing modal...');
         cleanupConnection();
       }
 
@@ -1151,27 +1274,29 @@ window.addEventListener('click', (event) => {
         cleanupConnection();
       }
     }
-  });
+  }
 });
 
 // Close on Escape key
-document.addEventListener('keydown', (event) => {
+document.addEventListener('keydown', async (event) => {
   if (event.key === 'Escape') {
-    Object.entries(modals).forEach(([key, modal]) => {
+    for (const [key, modal] of Object.entries(modals)) {
       if (modal.style.display === 'block') {
         // If closing sender or receiver modal while connected, warn user
         if ((key === 'sender' || key === 'receiver') && isConnected) {
-          const shouldClose = confirm(
-            '⚠️ Warning: You are still connected!\n\n' +
-              'Closing this window will disconnect the transfer session.\n\n' +
-              'Are you sure you want to close?'
-          );
+          const shouldClose = await appuiAlert.show({
+            title: '⚠️ Warning: You are still connected!',
+            message:
+              'Closing this window will disconnect the transfer session.\n\nAre you sure you want to close?',
+            confirm: true,
+          });
 
           if (!shouldClose) {
             return;
           }
 
           // Cleanup connection
+          console.log('Cleaning up connection before closing modal...');
           cleanupConnection();
         }
 
@@ -1180,10 +1305,119 @@ document.addEventListener('keydown', (event) => {
         // Reset transfer type when closing sender or receiver modals
         if (key === 'sender' || key === 'receiver') {
           transferType = null;
+          console.log('Cleaning up connection before closing modal...');
+          cleanupConnection();
         }
+      }
+    }
+  }
+});
+
+const appuiAlert = (() => {
+  const overlay = document.getElementById('appui-alert-overlay');
+  const titleEl = document.getElementById('appui-alert-title');
+  const messageEl = document.getElementById('appui-alert-message');
+  const buttonsEl = document.getElementById('appui-alert-buttons');
+  const closeBtn = document.getElementById('appui-alert-close');
+
+  function show({ title = 'Alert', message = '', confirm = false }) {
+    overlay.classList.remove('appui-hidden');
+    titleEl.textContent = title;
+    messageEl.textContent = message;
+    buttonsEl.innerHTML = '';
+
+    return new Promise((resolve) => {
+      const okBtn = document.createElement('button');
+      okBtn.textContent = 'OK';
+      okBtn.className = 'appui-btn-primary';
+
+      okBtn.onclick = () => {
+        hide();
+        resolve(true);
+      };
+
+      buttonsEl.appendChild(okBtn);
+
+      if (confirm) {
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.className = 'appui-btn-danger';
+
+        cancelBtn.onclick = () => {
+          hide();
+          resolve(false);
+        };
+
+        buttonsEl.prepend(cancelBtn);
       }
     });
   }
-});
+
+  function hide() {
+    overlay.classList.add('appui-hidden');
+  }
+
+  closeBtn.onclick = hide;
+  overlay.onclick = (e) => {
+    if (e.target === overlay) hide();
+  };
+
+  return { show };
+})();
+
+const appuiToast = (() => {
+  const container = document.createElement('div');
+  container.className = 'appui-toast-container';
+  document.body.appendChild(container);
+
+  function show(message, type = 'info', duration = 4000, options = {}) {
+    const toast = document.createElement('div');
+    toast.className = `appui-toast appui-toast-${type}`;
+
+    // Build toast content with optional action button
+    let toastHTML = `<span class="appui-toast-message">${message}</span>`;
+
+    if (options.actionText && options.onAction) {
+      toastHTML += `<button class="appui-toast-action">${options.actionText}</button>`;
+    }
+
+    toastHTML += `<span class="appui-toast-close">&times;</span>`;
+    toast.innerHTML = toastHTML;
+
+    container.appendChild(toast);
+
+    requestAnimationFrame(() => toast.classList.add('show'));
+
+    const timeout = setTimeout(() => remove(toast), duration);
+
+    // Handle action button click
+    const actionBtn = toast.querySelector('.appui-toast-action');
+    if (actionBtn && options.onAction) {
+      actionBtn.onclick = () => {
+        clearTimeout(timeout);
+        options.onAction();
+        remove(toast);
+      };
+    }
+
+    // Handle close button click
+    toast.querySelector('.appui-toast-close').onclick = () => {
+      clearTimeout(timeout);
+      remove(toast);
+    };
+  }
+
+  function remove(toast) {
+    toast.classList.remove('show');
+    setTimeout(() => toast.remove(), 300);
+  }
+
+  return {
+    success: (msg, d, options) => show(msg, 'success', d, options),
+    error: (msg, d, options) => show(msg, 'error', d, options),
+    warn: (msg, d, options) => show(msg, 'warn', d, options),
+    info: (msg, d, options) => show(msg, 'info', d, options),
+  };
+})();
 
 console.log('File Transfer App initialized with real Electron IPC');

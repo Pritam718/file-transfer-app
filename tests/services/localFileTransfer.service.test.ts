@@ -1,3 +1,4 @@
+import { BrowserWindow } from 'electron';
 import { LocalFileTransferService } from '../../src/main/services/localFileTransfer.service';
 
 // Mock dependencies
@@ -5,15 +6,16 @@ jest.mock('../../src/main/utils/logger');
 
 describe('LocalFileTransferService', () => {
   let service: LocalFileTransferService;
-  let mockWindow: any;
+  let mockWindow: Partial<BrowserWindow>;
 
   beforeEach(() => {
     mockWindow = {
       webContents: {
         send: jest.fn(),
-      },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any,
     };
-    service = new LocalFileTransferService(mockWindow);
+    service = new LocalFileTransferService(mockWindow as BrowserWindow);
   });
 
   afterEach(() => {

@@ -12,11 +12,13 @@
     <link rel="stylesheet" href="../styles/main.css" />
   </head>
   <body>
+    <!-- Header -->
     <div class="header">
       <img src="../../public/assets/icon.svg" alt="App Icon" class="app-icon" />
       <h2 class="app-title">File Transfer App</h2>
     </div>
 
+    <!-- Main Content -->
     <div class="container">
       <div class="content">
         <div class="icon-display">
@@ -232,6 +234,7 @@
                 type="text"
                 id="manual-ip-input"
                 placeholder="192.168.1.100"
+                inputmode="decimal"
                 class="input-field"
               />
             </div>
@@ -242,8 +245,10 @@
                 id="manual-port-input"
                 placeholder="12345"
                 class="input-field"
+                inputmode="numeric"
                 min="1024"
                 max="65535"
+                maxlength="5"
               />
             </div>
             <button id="manual-proceed-btn" class="action-btn">➡️ Proceed to Connect</button>
@@ -295,6 +300,18 @@
           </div>
           <div id="received-files-list" class="file-list"></div>
         </div>
+      </div>
+    </div>
+
+    <!-- Alert Overlay -->
+    <div id="appui-alert-overlay" class="appui-hidden">
+      <div class="appui-alert-box">
+        <div class="appui-alert-header">
+          <span id="appui-alert-title"></span>
+          <button id="appui-alert-close">&times;</button>
+        </div>
+        <div id="appui-alert-message" class="appui-alert-message"></div>
+        <div id="appui-alert-buttons" class="appui-alert-buttons"></div>
       </div>
     </div>
 

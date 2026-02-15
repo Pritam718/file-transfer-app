@@ -75,7 +75,7 @@ export class Logger {
     }
   }
 
-  private log(level: LogLevel, message: string, ...args: any[]) {
+  private log(level: LogLevel, message: string, ...args: unknown[]) {
     const timestamp = new Date().toISOString();
     const color = this.getColorForLevel(level);
     const icon = this.getIconForLevel(level);
@@ -88,26 +88,26 @@ export class Logger {
     console.log(`${coloredTimestamp} ${coloredLevel} ${coloredMessage}`, ...args);
   }
 
-  info(message: string, ...args: any[]) {
+  info(message: string, ...args: unknown[]) {
     this.log(LogLevel.INFO, message, ...args);
   }
 
-  warn(message: string, ...args: any[]) {
+  warn(message: string, ...args: unknown[]) {
     this.log(LogLevel.WARN, message, ...args);
   }
 
-  error(message: string, ...args: any[]) {
+  error(message: string, ...args: unknown[]) {
     this.log(LogLevel.ERROR, message, ...args);
   }
 
-  debug(message: string, ...args: any[]) {
+  debug(message: string, ...args: unknown[]) {
     if (process.env.NODE_ENV === 'development') {
       this.log(LogLevel.DEBUG, message, ...args);
     }
   }
 
   // Additional helper methods for success and progress
-  success(message: string, ...args: any[]) {
+  success(message: string, ...args: unknown[]) {
     const timestamp = new Date().toISOString();
     const coloredTimestamp = `${Colors.Gray}[${timestamp}]${Colors.Reset}`;
     const coloredLevel = `${Colors.Green}${Colors.Bright}[✅ SUCCESS]${Colors.Reset}`;
@@ -116,7 +116,7 @@ export class Logger {
     console.log(`${coloredTimestamp} ${coloredLevel} ${coloredMessage}`, ...args);
   }
 
-  loading(message: string, ...args: any[]) {
+  loading(message: string, ...args: unknown[]) {
     const timestamp = new Date().toISOString();
     const coloredTimestamp = `${Colors.Gray}[${timestamp}]${Colors.Reset}`;
     const coloredLevel = `${Colors.Blue}${Colors.Bright}[⏳ LOADING]${Colors.Reset}`;
