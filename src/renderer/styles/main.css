@@ -583,6 +583,13 @@ body {
   flex-shrink: 0;
 }
 
+.file-remove {
+  font-size: 18px;
+  color: #ff4d4f;
+  cursor: pointer;
+  transition: color 0.3s ease;
+}
+
 /* Scrollbar Styling */
 .file-list::-webkit-scrollbar {
   width: 8px;

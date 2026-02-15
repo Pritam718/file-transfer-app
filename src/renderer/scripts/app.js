@@ -268,7 +268,6 @@ document.querySelectorAll('.close-modal').forEach((btn) => {
   btn.addEventListener('click', () => {
     const modalId = btn.getAttribute('data-modal');
     const modal = document.getElementById(modalId);
-    console.log('rrrrrrrrrrrrrrrrrrr');
 
     // If closing sender or receiver modal while connected, warn user
     if ((modalId === 'sender-modal' || modalId === 'receiver-modal') && isConnected) {
@@ -942,6 +941,7 @@ function displaySelectedFiles(filePaths) {
                 <div class="file-name">${fileName}</div>
                 <div class="file-size">Ready to send</div>
             </div>
+            <span class="file-remove" data-file-index="${filePaths.indexOf(filePath)}">🗑️</span>
             <span class="file-status">⏳</span>
         `;
     fileList.appendChild(fileItem);
@@ -950,8 +950,25 @@ function displaySelectedFiles(filePaths) {
   if (filePaths.length > 0) {
     sendFilesBtn.style.display = 'block';
     sendFilesBtn.disabled = false;
+  } else {
+    sendFilesBtn.style.display = 'none';
   }
 }
+
+// Event delegation for removing files from the list
+document.getElementById('file-list').addEventListener('click', (e) => {
+  if (e.target.classList.contains('file-remove')) {
+    const fileIndex = parseInt(e.target.dataset.fileIndex, 10);
+
+    // Remove file from the array
+    selectedFilePaths.splice(fileIndex, 1);
+
+    // Re-render the file list
+    displaySelectedFiles(selectedFilePaths);
+
+    console.log(`Removed file at index ${fileIndex}, ${selectedFilePaths.length} files remaining`);
+  }
+});
 
 // Send files - REAL IMPLEMENTATION
 sendFilesBtn.addEventListener('click', async () => {
@@ -962,6 +979,7 @@ sendFilesBtn.addEventListener('click', async () => {
 
   try {
     isTransferring = true; // Mark transfer as in progress
+    document.querySelectorAll('.file-remove').forEach((el) => (el.style.display = 'none'));
     sendFilesBtn.disabled = true;
     sendFilesBtn.textContent = '⏳ Sending...';
 
