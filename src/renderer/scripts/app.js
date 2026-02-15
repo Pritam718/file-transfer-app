@@ -94,27 +94,37 @@ window.electronAPI.onConnectionLost((info) => {
   // Use setTimeout to ensure alert shows properly
   setTimeout(() => {
     // Show error message with mode-specific information
+    let title = '';
     let message = '';
     let action = '';
 
     if (info.mode === 'sender') {
-      message = '❌ Connection Lost: ' + info.reason;
+      title = '🔌 Receiver Disconnected';
+      message = 'The receiver has disconnected from your transfer session.';
       action =
-        'The receiver has disconnected. You can:\n\n' +
-        '1. Wait for the receiver to reconnect\n' +
-        '2. Close and start a new sender session';
+        'What you can do:\n\n' +
+        '• Wait for the receiver to reconnect (if they return soon)\n' +
+        '• Close this window and start a new sender session';
+
+      // Show toast notification as well
+      appuiToast.warn('Receiver disconnected: ' + info.reason, 5000);
     } else {
-      message = '❌ Connection Lost: ' + info.reason;
+      title = '🔌 Sender Disconnected';
+      message = 'The sender has closed the connection or stopped the transfer.';
       action =
-        'The sender has disconnected. You need to:\n\n' +
-        '1. Close this dialog\n' +
-        '2. Start a new transfer and reconnect to the sender';
+        'What you need to do:\n\n' +
+        '• Close this dialog\n' +
+        '• Start a new transfer session\n' +
+        '• Reconnect to the sender';
+
+      // Show toast notification for receiver
+      appuiToast.error('Connection lost: Sender disconnected', 6000);
     }
 
-    // Show alert with full message
+    // Show detailed alert
     appuiAlert.show({
-      title: 'Connection Lost',
-      message: message + '\n\n' + action,
+      title: title,
+      message: message + '\n\n' + action + '\n\nReason: ' + (info.reason || 'Unknown'),
       confirm: false,
     });
 
