@@ -9,19 +9,19 @@ import { LocalFileTransferService } from '../services/localFileTransfer.service'
 import { IPC_CHANNELS } from '../utils/constants';
 import { logger } from '../utils/logger';
 
-let transferService: LocalFileTransferService | null = null;
+let localTransferService: LocalFileTransferService | null = null;
 
 /**
  * Setup all IPC handlers
  */
 export function setupIPCHandlers(mainWindow: BrowserWindow): void {
-  transferService = new LocalFileTransferService(mainWindow);
+  localTransferService = new LocalFileTransferService(mainWindow);
 
   // Start sender mode
-  ipcMain.handle(IPC_CHANNELS.START_SENDER, async () => {
+  ipcMain.handle(IPC_CHANNELS.START_SENDER, async (transferType) => {
     try {
       logger.loading('Starting sender mode...');
-      const result = await transferService!.startSender();
+      const result = await localTransferService!.startSender();
       logger.success('Sender mode started successfully');
       return result;
     } catch (err: any) {
@@ -31,9 +31,9 @@ export function setupIPCHandlers(mainWindow: BrowserWindow): void {
   });
 
   // Stop sender mode
-  ipcMain.handle(IPC_CHANNELS.STOP_SENDER, async () => {
+  ipcMain.handle(IPC_CHANNELS.STOP_SENDER, async (transferType) => {
     try {
-      await transferService!.stopSender();
+      await localTransferService!.stopSender();
       return { success: true };
     } catch (err: any) {
       logger.error('Failed to stop sender:', err.message);
@@ -64,7 +64,7 @@ export function setupIPCHandlers(mainWindow: BrowserWindow): void {
           finalSaveDir = result.filePaths[0];
         }
 
-        await transferService!.connectToSender(ip, port, code, finalSaveDir);
+        await localTransferService!.connectToSender(ip, port, code, finalSaveDir);
 
         return { success: true, saveDir: finalSaveDir };
       } catch (err: any) {
@@ -77,7 +77,7 @@ export function setupIPCHandlers(mainWindow: BrowserWindow): void {
   // Disconnect receiver
   ipcMain.handle(IPC_CHANNELS.DISCONNECT_RECEIVER, async () => {
     try {
-      await transferService!.disconnectReceiver();
+      await localTransferService!.disconnectReceiver();
       return { success: true };
     } catch (err: any) {
       logger.error('Failed to disconnect receiver:', err.message);
@@ -89,7 +89,7 @@ export function setupIPCHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle(IPC_CHANNELS.SEND_FILES, async (_event, filePaths: string[]) => {
     try {
       logger.loading('Preparing to send files...');
-      await transferService!.sendFiles(filePaths);
+      await localTransferService!.sendFiles(filePaths);
       return { success: true };
     } catch (err: any) {
       logger.error('Failed to send files:', err.message);
@@ -151,7 +151,7 @@ export function setupIPCHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle(IPC_CHANNELS.DISCOVER_SERVICES, async () => {
     try {
       logger.loading('Discovering file transfer services on network...');
-      const services = await transferService!.discoverServices();
+      const services = await localTransferService!.discoverServices();
       logger.success(`Found ${services.length} service(s)`);
       return services;
     } catch (err: any) {
@@ -168,8 +168,8 @@ export function setupIPCHandlers(mainWindow: BrowserWindow): void {
  * Cleanup IPC handlers
  */
 export function cleanupIPCHandlers(): void {
-  if (transferService) {
-    transferService.cleanup();
-    transferService = null;
+  if (localTransferService) {
+    localTransferService.cleanup();
+    localTransferService = null;
   }
 }

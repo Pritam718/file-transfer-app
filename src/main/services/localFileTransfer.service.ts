@@ -10,7 +10,11 @@ import * as fs from 'fs';
 import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
-import { ConnectionInfo, TransferMetadata } from '../interfaces/localFileTransfer.interface';
+import {
+  ConnectionInfo,
+  FileProgress,
+  TransferMetadata,
+} from '../interfaces/localFileTransfer.interface';
 import { formatFileSize, getLocalIPAddress } from '../lib/network.lib';
 import { IPC_CHANNELS, NETWORK } from '../utils/constants';
 import { logger } from '../utils/logger';
@@ -433,14 +437,18 @@ export class LocalFileTransferService {
       throw new Error('No receiver connected');
     }
 
-    logger.loading(`Sending ${filePaths.length} file(s)...`);
+    logger.loading(`[SEND FILES] Starting to send ${filePaths.length} file(s)...`);
 
     for (let i = 0; i < filePaths.length; i++) {
       const filePath = filePaths[i];
+      logger.info(
+        `[SEND FILES] About to send file ${i + 1}/${filePaths.length}: ${path.basename(filePath)}`
+      );
       await this.sendFile(filePath, i + 1, filePaths.length);
+      logger.success(`[SEND FILES] File ${i + 1}/${filePaths.length} sent and acknowledged`);
     }
 
-    logger.success('All files sent successfully!');
+    logger.success('[SEND FILES] All files sent successfully!');
     this.mainWindow?.webContents.send(IPC_CHANNELS.TRANSFER_COMPLETE);
   }
 
@@ -463,38 +471,73 @@ export class LocalFileTransferService {
         };
 
         const metadataStr = JSON.stringify({ type: 'metadata', data: metadata });
+        logger.info(
+          `[SEND FILE] Sending metadata for file ${currentFile}/${totalFiles}: ${fileName} (${formatFileSize(fileSize)})`
+        );
         this.client?.write(Buffer.from(metadataStr + this.messageDelimiter));
 
-        logger.info(
-          `Sending file ${currentFile}/${totalFiles}: ${fileName} (${formatFileSize(fileSize)})`
-        );
+        logger.info(`[SEND FILE] Metadata sent, now sending file data...`);
 
-        // Send file data
-        const readStream = fs.createReadStream(filePath);
+        // Send file data with proper backpressure handling
+        const readStream = fs.createReadStream(filePath, { highWaterMark: 64 * 1024 }); // 64KB chunks
         let sentBytes = 0;
+        let lastProgressUpdate = 0;
+        let lastProgressTime = Date.now();
 
-        readStream.on('data', (chunk) => {
-          sentBytes += chunk.length;
+        readStream.on('data', (chunk: string | Buffer) => {
+          const bufferChunk = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+          sentBytes += bufferChunk.length;
+
+          // Update progress every 1% or every 100ms, whichever comes first
           const progress = Math.round((sentBytes / fileSize) * 100);
+          const now = Date.now();
+          const shouldUpdate =
+            progress > lastProgressUpdate || now - lastProgressTime > 100 || sentBytes === fileSize;
 
-          this.mainWindow?.webContents.send(IPC_CHANNELS.TRANSFER_PROGRESS, {
-            fileName,
-            progress,
-            sentBytes,
-            totalBytes: fileSize,
-            currentFile,
-            totalFiles,
-          });
+          if (shouldUpdate) {
+            lastProgressUpdate = progress;
+            lastProgressTime = now;
+            this.mainWindow?.webContents.send(IPC_CHANNELS.TRANSFER_PROGRESS, {
+              fileName,
+              progress,
+              sentBytes,
+              totalBytes: fileSize,
+              currentFile,
+              totalFiles,
+            } as FileProgress);
+          }
 
-          this.client?.write(chunk);
+          // Write to socket and handle backpressure
+          const canContinue = this.client?.write(bufferChunk);
+
+          // If socket buffer is full, pause reading until it drains
+          if (!canContinue) {
+            readStream.pause();
+            this.client?.once('drain', () => {
+              readStream.resume();
+            });
+          }
         });
 
         readStream.on('end', () => {
+          // Ensure final 100% progress is sent
+          this.mainWindow?.webContents.send(IPC_CHANNELS.TRANSFER_PROGRESS, {
+            fileName,
+            progress: 100,
+            sentBytes: fileSize,
+            totalBytes: fileSize,
+            currentFile,
+            totalFiles,
+          } as FileProgress);
+
           // Send end marker and wait for receiver acknowledgment
           setTimeout(async () => {
             const endMarker = JSON.stringify({ type: 'file-end' });
+            logger.info(`[SEND FILE] File data complete, sending file-end marker for ${fileName}`);
             this.client?.write(Buffer.from(endMarker + this.messageDelimiter));
-            logger.success(`File sent: ${fileName}, waiting for save confirmation...`);
+            logger.success(
+              `[SEND FILE] File-end marker sent for ${fileName}, waiting for save confirmation...`
+            );
 
             // Wait for receiver to save the file and send acknowledgment
             await new Promise<void>((resolveAck) => {
@@ -503,14 +546,14 @@ export class LocalFileTransferService {
               // Timeout after 30 seconds
               setTimeout(() => {
                 if (this.fileSavedResolver === resolveAck) {
-                  logger.warn(`File save acknowledgment timeout for ${fileName}`);
+                  logger.warn(`[SEND FILE] File save acknowledgment timeout for ${fileName}`);
                   this.fileSavedResolver = null;
                   resolve();
                 }
               }, 30000);
             });
 
-            logger.info(`File confirmed saved: ${fileName}`);
+            logger.info(`[SEND FILE] File confirmed saved by receiver: ${fileName}`);
             resolve();
           }, 100);
         });
@@ -533,64 +576,66 @@ export class LocalFileTransferService {
     try {
       const delimiterBuffer = Buffer.from(this.messageDelimiter);
       logger.info(
-        `[PROCESS] BufferSize: ${this.dataBuffer.length}, isReceiving: ${this.isReceiving}`
+        `[PROCESS START] BufferSize: ${this.dataBuffer.length}, isReceiving: ${this.isReceiving}, currentFile: ${this.currentFileMetadata?.currentFile || 'none'}`
       );
 
       while (true) {
         if (this.isReceiving && this.currentFileMetadata) {
-          // We're receiving file data, look for end marker
-          logger.info(`[PROCESS] Mode: Receiving file data`);
-          const delimiterIndex = this.dataBuffer.indexOf(delimiterBuffer);
+          // We're receiving file data - read EXACT byte count from metadata
+          logger.info(
+            `[PROCESS] Mode: Receiving file data (${this.receivedBytes}/${this.currentFileMetadata.fileSize} bytes)`
+          );
 
-          if (delimiterIndex !== -1) {
-            // Found delimiter, take file data before it
-            const fileData = this.dataBuffer.subarray(0, delimiterIndex);
+          // Check if file is already complete - look for file-end marker
+          if (this.receivedBytes === this.currentFileMetadata.fileSize) {
+            logger.info(`[PROCESS] File data complete, looking for file-end marker`);
+
+            // Now look for file-end marker
+            const delimiterIndex = this.dataBuffer.indexOf(delimiterBuffer);
+            if (delimiterIndex !== -1) {
+              const messageStr = this.dataBuffer.subarray(0, delimiterIndex).toString();
+              this.dataBuffer = this.dataBuffer.subarray(delimiterIndex + delimiterBuffer.length);
+
+              try {
+                const json = JSON.parse(messageStr);
+                if (json.type === 'file-end') {
+                  logger.info(`[PROCESS] Found file-end marker, saving file`);
+                  this.saveReceivedFile();
+                  // Continue loop to process next file metadata
+                  continue;
+                } else {
+                  logger.warn(`[PROCESS] Expected file-end but got: ${json.type}`);
+                  break;
+                }
+              } catch (e) {
+                logger.error(`[PROCESS] Failed to parse file-end marker: ${messageStr}`);
+                break;
+              }
+            } else {
+              // Wait for file-end marker
+              logger.info(
+                `[PROCESS] Waiting for file-end marker, buffer size: ${this.dataBuffer.length}`
+              );
+              break;
+            }
+          }
+
+          // File not complete yet - read more data
+          const remainingBytes = this.currentFileMetadata.fileSize - this.receivedBytes;
+          const bytesToRead = Math.min(remainingBytes, this.dataBuffer.length);
+
+          if (bytesToRead > 0) {
+            // Take exact bytes for this file (not more, not less)
+            const fileData = this.dataBuffer.subarray(0, bytesToRead);
             this.receivingBuffer = Buffer.concat([this.receivingBuffer, fileData]);
-            this.receivedBytes += fileData.length;
+            this.receivedBytes += bytesToRead;
 
             // Update progress
             const progress = Math.round(
               (this.receivedBytes / this.currentFileMetadata.fileSize) * 100
             );
-            this.mainWindow?.webContents.send(IPC_CHANNELS.TRANSFER_PROGRESS, {
-              fileName: this.currentFileMetadata.fileName,
-              progress,
-              receivedBytes: this.receivedBytes,
-              totalBytes: this.currentFileMetadata.fileSize,
-              currentFile: this.currentFileMetadata.currentFile,
-              totalFiles: this.currentFileMetadata.totalFiles,
-            });
-
-            // Move buffer forward past delimiter
-            this.dataBuffer = this.dataBuffer.subarray(delimiterIndex + delimiterBuffer.length);
-
-            // Check if next message is file-end
-            const nextDelimiterIndex = this.dataBuffer.indexOf(delimiterBuffer);
-            if (nextDelimiterIndex !== -1) {
-              const messageStr = this.dataBuffer.subarray(0, nextDelimiterIndex).toString();
-              try {
-                const json = JSON.parse(messageStr);
-                if (json.type === 'file-end') {
-                  this.saveReceivedFile();
-                  this.dataBuffer = this.dataBuffer.subarray(
-                    nextDelimiterIndex + delimiterBuffer.length
-                  );
-                }
-              } catch (e) {
-                // Not valid JSON, keep waiting
-                break;
-              }
-            } else {
-              // Wait for more data
-              break;
-            }
-          } else {
-            // No delimiter yet, accumulate file data
-            this.receivingBuffer = Buffer.concat([this.receivingBuffer, this.dataBuffer]);
-            this.receivedBytes += this.dataBuffer.length;
-
-            const progress = Math.round(
-              (this.receivedBytes / this.currentFileMetadata.fileSize) * 100
+            logger.info(
+              `[PROGRESS] Sending progress: ${this.receivedBytes}/${this.currentFileMetadata.fileSize} (${progress}%)`
             );
             this.mainWindow?.webContents.send(IPC_CHANNELS.TRANSFER_PROGRESS, {
               fileName: this.currentFileMetadata.fileName,
@@ -601,7 +646,14 @@ export class LocalFileTransferService {
               totalFiles: this.currentFileMetadata.totalFiles,
             });
 
-            this.dataBuffer = Buffer.alloc(0);
+            // Move buffer forward
+            this.dataBuffer = this.dataBuffer.subarray(bytesToRead);
+
+            // Continue loop to check if file is now complete
+            continue;
+          } else {
+            // No data available yet, wait
+            logger.info(`[PROCESS] No data available, waiting for more file data...`);
             break;
           }
         } else {
@@ -627,23 +679,31 @@ export class LocalFileTransferService {
                 this.isReceiving = true;
 
                 logger.info(
-                  `Receiving file ${json.data.currentFile}/${json.data.totalFiles}: ${json.data.fileName} (${formatFileSize(json.data.fileSize)})`
+                  `[METADATA RECEIVED] File ${json.data.currentFile}/${json.data.totalFiles}: ${json.data.fileName} (${formatFileSize(json.data.fileSize)})`
                 );
+                logger.info(`[METADATA] Setting isReceiving=true, will continue loop to read data`);
+                // Continue loop to start receiving file data
+                continue;
               } else if (json.type === 'file-saved') {
-                // Receiver has saved the file successfully
-                logger.info('Received file-saved acknowledgment from receiver');
+                // Receiver has saved the file successfully (sender side receives this)
+                logger.info('[ACK RECEIVED] Received file-saved acknowledgment from receiver');
                 if (this.fileSavedResolver) {
+                  logger.info('[ACK RECEIVED] Resolving promise, sender will send next file');
                   this.fileSavedResolver();
                   this.fileSavedResolver = null;
                 } else {
-                  logger.warn('Received file-saved but no resolver waiting');
+                  logger.warn('[ACK RECEIVED] Received file-saved but no resolver waiting');
                 }
+                // Continue loop to look for next message
+                continue;
               }
             } catch (e) {
               logger.warn('Failed to parse control message');
+              break;
             }
           } else {
             // Wait for complete message
+            logger.info(`[PROCESS] Waiting for complete control message`);
             break;
           }
         }
@@ -698,6 +758,8 @@ export class LocalFileTransferService {
       this.currentFileMetadata = null;
       this.receivingBuffer = Buffer.alloc(0);
       this.receivedBytes = 0;
+
+      logger.info(`[SAVE] File saved complete, state reset. Ready for next file.`);
     } catch (err: any) {
       logger.error('Error saving file:', err.message);
       this.mainWindow?.webContents.send(IPC_CHANNELS.TRANSFER_ERROR, err.message);

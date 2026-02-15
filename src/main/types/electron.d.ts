@@ -4,8 +4,8 @@
 
 export interface ElectronAPI {
   // File transfer operations
-  startSender: () => Promise<{ ip: string; port: number; code: string }>;
-  stopSender: () => Promise<void>;
+  startSender: (transferType) => Promise<{ ip: string; port: number; code: string }>;
+  stopSender: (transferType) => Promise<void>;
   connectToSender: (
     ip: string,
     port: number,

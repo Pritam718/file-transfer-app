@@ -34,6 +34,8 @@ let selectedFilePaths = [];
 let saveDirectory = '';
 let currentMode = null; // 'sender' or 'receiver'
 let isConnected = false;
+let transferType = null;
+let isTransferring = false; // Track if a transfer is currently in progress
 
 // Load saved path from localStorage
 try {
@@ -133,12 +135,20 @@ window.electronAPI.onFileReceived((file) => {
 
 window.electronAPI.onTransferComplete(() => {
   console.log('Transfer complete!');
+  isTransferring = false; // Transfer finished
+
   if (sendFilesBtn) {
     sendFilesBtn.textContent = '✅ All Files Sent!';
     setTimeout(() => {
       sendFilesBtn.textContent = '🚀 Send Files';
       sendFilesBtn.disabled = false;
+      // Clear file list after successful transfer
       selectedFilePaths = [];
+      // const fileList = document.getElementById('file-list');
+      // if (fileList) {
+      //   fileList.innerHTML = '';
+      // }
+      // sendFilesBtn.style.display = 'none';
     }, 2000);
   }
 });
@@ -275,20 +285,28 @@ document.querySelectorAll('.close-modal').forEach((btn) => {
     }
 
     modal.style.display = 'none';
+
+    // Reset transfer type when closing sender or receiver modals
+    if (modalId === 'sender-modal' || modalId === 'receiver-modal') {
+      transferType = null;
+    }
   });
 });
 
 // Open modals
 localTransferButton.addEventListener('click', () => {
   modals.mode.style.display = 'block';
+  transferType = 'local';
 });
 
 remoteTransferButton.addEventListener('click', () => {
   modals.mode.style.display = 'block';
+  transferType = 'remote';
 });
 
 secureTransferButton.addEventListener('click', () => {
   modals.mode.style.display = 'block';
+  transferType = 'secure';
 });
 
 helpButton.addEventListener('click', () => {
@@ -304,38 +322,15 @@ senderModeBtn.addEventListener('click', async () => {
     modals.mode.style.display = 'none';
     modals.sender.style.display = 'block';
     currentMode = 'sender';
+    console.log('Selected transfer type:', transferType);
 
-    // Reset UI to initial state
-    document.getElementById('sender-setup').style.display = 'block';
-    document.getElementById('sender-transfer').style.display = 'none';
-    document.getElementById('file-list').innerHTML = '';
-    selectedFilePaths = [];
-    if (sendFilesBtn) {
-      sendFilesBtn.style.display = 'none';
+    if (transferType === 'local') {
+      await localSender();
+    } else if (transferType === 'remote') {
+      await remoteSender();
+    } else if (transferType === 'secure') {
+      await secureSender();
     }
-
-    // Show loading state
-    document.querySelector('#sender-modal .status-message span:last-child').textContent =
-      'Starting server...';
-
-    // Start sender mode - REAL IMPLEMENTATION
-    const result = await window.electronAPI.startSender();
-
-    // Display hostname and connection code
-    const hostname = result.hostname || 'Unknown Device';
-    document.getElementById('service-name').textContent = hostname;
-    document.getElementById('connection-code').textContent = result.code;
-
-    // Also display traditional IP/Port for debugging (if elements exist)
-    const senderIpEl = document.getElementById('sender-ip');
-    const senderPortEl = document.getElementById('sender-port');
-    if (senderIpEl) senderIpEl.textContent = result.ip;
-    if (senderPortEl) senderPortEl.textContent = result.port;
-
-    document.querySelector('#sender-modal .status-message span:last-child').textContent =
-      'Waiting for receiver to connect...';
-
-    console.log('Sender started:', result);
   } catch (error) {
     console.error('Failed to start sender:', error);
     alert('Failed to start sender mode: ' + error.message);
@@ -343,6 +338,69 @@ senderModeBtn.addEventListener('click', async () => {
     currentMode = null;
   }
 });
+
+async function localSender() {
+  // Implementation for local sender mode (P2P on same network)
+  console.log('Starting LOCAL sender mode - P2P transfer on same network');
+
+  // Reset UI to initial state
+  document.getElementById('sender-setup').style.display = 'block';
+  document.getElementById('sender-transfer').style.display = 'none';
+  document.getElementById('file-list').innerHTML = '';
+  selectedFilePaths = [];
+  if (sendFilesBtn) {
+    sendFilesBtn.style.display = 'none';
+  }
+
+  // Show loading state
+  document.querySelector('#sender-modal .status-message span:last-child').textContent =
+    'Starting local server...';
+
+  // Start sender mode - REAL IMPLEMENTATION
+  const result = await window.electronAPI.startSender();
+
+  // Display hostname and connection code
+  const hostname = result.hostname || 'Unknown Device';
+  document.getElementById('service-name').textContent = hostname + ' (Local)';
+  document.getElementById('connection-code').textContent = result.code;
+
+  // Also display traditional IP/Port for debugging (if elements exist)
+  const senderIpEl = document.getElementById('sender-ip');
+  const senderPortEl = document.getElementById('sender-port');
+  if (senderIpEl) senderIpEl.textContent = result.ip;
+  if (senderPortEl) senderPortEl.textContent = result.port;
+
+  document.querySelector('#sender-modal .status-message span:last-child').textContent =
+    'Waiting for receiver to connect (Local Network)...';
+}
+
+async function remoteSender() {
+  // Implementation for remote sender mode (over internet)
+  console.log('Starting REMOTE sender mode - internet transfer');
+
+  // TODO: Implement relay server or WebRTC for remote transfers
+  alert(
+    '🌐 Remote Transfer\n\nThis feature allows file transfer over the internet.\n\nComing soon! Currently only local network transfer is supported.'
+  );
+
+  // Close the modal since feature is not available
+  modals.sender.style.display = 'none';
+  currentMode = null;
+}
+
+async function secureSender() {
+  // Implementation for secure sender mode (encrypted transfer)
+  console.log('Starting SECURE sender mode - encrypted transfer');
+
+  // TODO: Implement end-to-end encryption
+  alert(
+    '🔐 Secure Transfer\n\nThis feature adds end-to-end encryption to file transfers.\n\nComing soon! Current transfers use basic TCP without encryption.'
+  );
+
+  // Close the modal since feature is not available
+  modals.sender.style.display = 'none';
+  currentMode = null;
+}
 
 // Toggle Manual Connection Details
 const toggleManualDetailsBtn = document.getElementById('toggle-manual-details');
@@ -371,9 +429,28 @@ let discoveredSenders = [];
 let selectedSender = null;
 
 receiverModeBtn.addEventListener('click', async () => {
-  modals.mode.style.display = 'none';
-  modals.receiver.style.display = 'block';
-  currentMode = 'receiver';
+  try {
+    modals.mode.style.display = 'none';
+    modals.receiver.style.display = 'block';
+    currentMode = 'receiver';
+
+    if (transferType === 'local') {
+      await localReceiver();
+    } else if (transferType === 'remote') {
+      await remoteReceiver();
+    } else if (transferType === 'secure') {
+      await secureReceiver();
+    }
+  } catch (error) {
+    currentMode = null;
+    console.error('Failed to start receiver:', error);
+    alert('Failed to start receiver mode: ' + error.message);
+  }
+});
+
+async function localReceiver() {
+  // Implementation for local receiver mode (P2P on same network)
+  console.log('Starting LOCAL receiver mode - P2P transfer on same network');
 
   // Reset UI to initial state
   document.getElementById('receiver-transfer').style.display = 'none';
@@ -389,9 +466,37 @@ receiverModeBtn.addEventListener('click', async () => {
     saveDirectory = '';
   }
 
-  // Start discovery process
+  // Start discovery process for local network
   await discoverAvailableSenders();
-});
+}
+
+async function remoteReceiver() {
+  // Implementation for remote receiver mode (over internet)
+  console.log('Starting REMOTE receiver mode - internet transfer');
+
+  // TODO: Implement relay server or WebRTC for remote transfers
+  alert(
+    '🌐 Remote Transfer\n\nThis feature allows file transfer over the internet.\n\nComing soon! Currently only local network transfer is supported.'
+  );
+
+  // Close the modal since feature is not available
+  modals.receiver.style.display = 'none';
+  currentMode = null;
+}
+
+async function secureReceiver() {
+  // Implementation for secure receiver mode (encrypted transfer)
+  console.log('Starting SECURE receiver mode - encrypted transfer');
+
+  // TODO: Implement end-to-end encryption
+  alert(
+    '🔐 Secure Transfer\n\nThis feature adds end-to-end encryption to file transfers.\n\nComing soon! Current transfers use basic TCP without encryption.'
+  );
+
+  // Close the modal since feature is not available
+  modals.receiver.style.display = 'none';
+  currentMode = null;
+}
 
 // Function to discover available senders
 async function discoverAvailableSenders() {
@@ -701,11 +806,39 @@ browseFolderBtn.addEventListener('click', async () => {
 
 // File drop zone - click to select files
 fileDropZone.addEventListener('click', async () => {
+  // Prevent file selection during active transfer
+  if (isTransferring) {
+    alert(
+      '⚠️ Transfer in progress!\n\nPlease wait for the current transfer to complete before selecting new files.'
+    );
+    return;
+  }
+
   try {
     const result = await window.electronAPI.selectFiles();
     if (!result.canceled && result.filePaths.length > 0) {
-      selectedFilePaths = result.filePaths;
-      displaySelectedFiles(result.filePaths);
+      if (selectedFilePaths.length === 0) {
+        // Reset file list - allow selecting new files even during transfer
+        selectedFilePaths = result.filePaths;
+
+        // Clear existing file list UI
+        const fileList = document.getElementById('file-list');
+        fileList.innerHTML = '';
+      } else {
+        selectedFilePaths.push(...result.filePaths);
+      }
+
+      // Display new files
+      displaySelectedFiles(selectedFilePaths);
+
+      // Reset send button to ready state
+      if (sendFilesBtn) {
+        sendFilesBtn.disabled = false;
+        sendFilesBtn.textContent = '🚀 Send Files';
+        sendFilesBtn.style.display = 'block';
+      }
+
+      console.log(`Selected ${selectedFilePaths.length} new file(s), previous list cleared`);
     }
   } catch (error) {
     console.error('Failed to select files:', error);
@@ -731,6 +864,14 @@ fileDropZone.addEventListener('drop', async (e) => {
   e.stopPropagation();
   fileDropZone.classList.remove('drag-over');
 
+  // Prevent file dropping during active transfer
+  if (isTransferring) {
+    alert(
+      '⚠️ Transfer in progress!\n\nPlease wait for the current transfer to complete before adding new files.'
+    );
+    return;
+  }
+
   try {
     // Get file paths from dropped files using Electron's webUtils
     const files = Array.from(e.dataTransfer.files);
@@ -745,9 +886,29 @@ fileDropZone.addEventListener('drop', async (e) => {
     }
 
     if (filePaths.length > 0) {
-      selectedFilePaths = filePaths;
+      // Reset file list - allow dropping new files even during transfer
+      if (selectedFilePaths?.length === 0) {
+        selectedFilePaths = filePaths;
+
+        // Clear existing file list UI
+        const fileList = document.getElementById('file-list');
+        fileList.innerHTML = '';
+      } else {
+        // If there are already files selected, replace them with the new dropped files
+        selectedFilePaths.push(...filePaths);
+      }
+
+      // Display new files
       displaySelectedFiles(selectedFilePaths);
-      console.log(`Dropped ${filePaths.length} file(s):`, filePaths);
+
+      // Reset send button to ready state
+      // if (sendFilesBtn) {
+      //   sendFilesBtn.disabled = false;
+      //   sendFilesBtn.textContent = '🚀 Send Files';
+      //   sendFilesBtn.style.display = 'block';
+      // }
+
+      console.log(`Dropped ${filePaths.length} new file(s), previous list cleared`);
     } else {
       console.warn('No valid file paths found in dropped files');
       alert('Could not get file paths. Please use the "Browse" button instead.');
@@ -793,6 +954,7 @@ sendFilesBtn.addEventListener('click', async () => {
   }
 
   try {
+    isTransferring = true; // Mark transfer as in progress
     sendFilesBtn.disabled = true;
     sendFilesBtn.textContent = '⏳ Sending...';
 
@@ -805,6 +967,7 @@ sendFilesBtn.addEventListener('click', async () => {
     alert('Failed to send files: ' + error.message);
     sendFilesBtn.textContent = '🚀 Send Files';
     sendFilesBtn.disabled = false;
+    isTransferring = false; // Reset on error
   }
 });
 
@@ -814,15 +977,17 @@ sendFilesBtn.addEventListener('click', async () => {
 
 // Update file progress
 function updateFileProgress(progress) {
-  let fileItems;
+  let currentItem;
 
   if (currentMode === 'receiver') {
-    fileItems = document.querySelectorAll('#received-files-list .file-item');
+    // On receiver side, find item by file number attribute
+    const fileList = document.getElementById('received-files-list');
+    currentItem = fileList.querySelector(`.file-item[data-file-number="${progress.currentFile}"]`);
   } else {
-    fileItems = document.querySelectorAll('#file-list .file-item');
+    // On sender side, use index position
+    const fileItems = document.querySelectorAll('#file-list .file-item');
+    currentItem = fileItems[progress.currentFile - 1];
   }
-
-  const currentItem = fileItems[progress.currentFile - 1];
 
   if (currentItem) {
     const fileNameElement = currentItem.querySelector('.file-name');
@@ -839,22 +1004,33 @@ function updateFileProgress(progress) {
     sizeElement.textContent = `${formatFileSize(bytes)} / ${formatFileSize(progress.totalBytes)} (${progress.progress}%)`;
 
     if (progress.progress === 100) {
-      statusElement.textContent = '⏳'; // Still waiting for save confirmation
+      if (currentMode === 'sender') {
+        statusElement.textContent = '✅'; // Sender: file sent successfully
+      } else {
+        statusElement.textContent = '⏳'; // Receiver: waiting for save confirmation
+      }
     } else {
       statusElement.textContent = '⬇️';
     }
+  } else {
+    console.warn(`[UPDATE] Could not find file item for file ${progress.currentFile}`);
   }
 }
 
 // Ensure file item exists on receiver side
 function ensureReceiverFileItem(progress) {
   const fileList = document.getElementById('received-files-list');
-  const existingItems = fileList.querySelectorAll('.file-item');
 
-  // Check if file item for this position already exists
-  if (existingItems.length < progress.currentFile) {
+  // Look for existing item with this file number
+  let existingItem = fileList.querySelector(
+    `.file-item[data-file-number="${progress.currentFile}"]`
+  );
+
+  if (!existingItem) {
+    // Create new file item for this file number
     const fileItem = document.createElement('div');
     fileItem.className = 'file-item';
+    fileItem.dataset.fileNumber = progress.currentFile;
     fileItem.dataset.fileName = progress.fileName;
     fileItem.innerHTML = `
             <span class="file-icon">📄</span>
@@ -865,15 +1041,16 @@ function ensureReceiverFileItem(progress) {
             <span class="file-status">⬇️</span>
         `;
     fileList.appendChild(fileItem);
+    console.log(
+      `[RECEIVER] Created file item for file ${progress.currentFile}: ${progress.fileName}`
+    );
   } else {
-    // Update filename if it already exists (in case it was wrong)
-    const existingItem = existingItems[progress.currentFile - 1];
-    if (existingItem) {
-      const fileNameElement = existingItem.querySelector('.file-name');
-      if (fileNameElement && fileNameElement.textContent !== progress.fileName) {
-        fileNameElement.textContent = progress.fileName;
-        existingItem.dataset.fileName = progress.fileName;
-      }
+    // Update filename if it changed
+    const fileNameElement = existingItem.querySelector('.file-name');
+    if (fileNameElement && fileNameElement.textContent !== progress.fileName) {
+      fileNameElement.textContent = progress.fileName;
+      existingItem.dataset.fileName = progress.fileName;
+      console.log(`[RECEIVER] Updated file item ${progress.currentFile}: ${progress.fileName}`);
     }
   }
 }
@@ -881,8 +1058,7 @@ function ensureReceiverFileItem(progress) {
 // Update received file to show completion
 function updateReceivedFileComplete(file) {
   const fileList = document.getElementById('received-files-list');
-  const fileItems = fileList.querySelectorAll('.file-item');
-  const fileItem = fileItems[file.currentFile - 1];
+  const fileItem = fileList.querySelector(`.file-item[data-file-number="${file.currentFile}"]`);
 
   if (fileItem) {
     const sizeElement = fileItem.querySelector('.file-size');
@@ -890,6 +1066,9 @@ function updateReceivedFileComplete(file) {
 
     sizeElement.textContent = `${formatFileSize(file.fileSize)} - Saved to ${file.savePath}`;
     statusElement.textContent = '✅';
+    console.log(`[RECEIVER] File ${file.currentFile} marked as complete: ${file.fileName}`);
+  } else {
+    console.warn(`[RECEIVER] Could not find file item ${file.currentFile} to mark complete`);
   }
 }
 
@@ -939,6 +1118,11 @@ window.addEventListener('click', (event) => {
       }
 
       modal.style.display = 'none';
+
+      // Reset transfer type when closing sender or receiver modals
+      if (key === 'sender' || key === 'receiver') {
+        transferType = null;
+      }
     }
   });
 });
@@ -965,6 +1149,11 @@ document.addEventListener('keydown', (event) => {
         }
 
         modal.style.display = 'none';
+
+        // Reset transfer type when closing sender or receiver modals
+        if (key === 'sender' || key === 'receiver') {
+          transferType = null;
+        }
       }
     });
   }
