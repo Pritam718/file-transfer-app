@@ -44,3 +44,11 @@ export interface ConnectionLostInfo {
   mode: 'sender' | 'receiver';
   reason: string;
 }
+
+export interface DiscoveredService {
+  name: string;
+  host: string;
+  addresses: string[];
+  port: number;
+  hostname: string;
+}

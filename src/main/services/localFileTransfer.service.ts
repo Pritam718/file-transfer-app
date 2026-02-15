@@ -12,11 +12,15 @@ import * as os from 'os';
 import * as path from 'path';
 import {
   ConnectionInfo,
+  ConnectionLostInfo,
+  ConnectionStatus,
+  DiscoveredService,
   FileProgress,
+  ReceivedFile,
   TransferMetadata,
 } from '../interfaces/localFileTransfer.interface';
 import { formatFileSize, getLocalIPAddress } from '../lib/network.lib';
-import { IPC_CHANNELS } from '../utils/constants';
+import { IPC_CHANNELS, NETWORK } from '../utils/constants';
 import { logger } from '../utils/logger';
 
 export class LocalFileTransferService {
@@ -32,7 +36,7 @@ export class LocalFileTransferService {
   private receivedBytes: number = 0;
   private dataBuffer: Buffer = Buffer.alloc(0);
   private messageDelimiter: string = '\x00\x00\x00\x00';
-  // private chunkSize: number = NETWORK.CHUNK_SIZE;
+  private chunkSize: number = NETWORK.CHUNK_SIZE;
   private bonjour: Bonjour | null = null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private bonjourService: any = null;
@@ -112,7 +116,7 @@ export class LocalFileTransferService {
                       this.mainWindow?.webContents.send(IPC_CHANNELS.CONNECTION_STATUS, {
                         connected: true,
                         mode: 'sender',
-                      });
+                      } as ConnectionStatus);
 
                       // Set up normal data handler for file transfers
                       socket.on('data', (data) => {
@@ -178,11 +182,11 @@ export class LocalFileTransferService {
               this.mainWindow?.webContents.send(IPC_CHANNELS.CONNECTION_STATUS, {
                 connected: false,
                 mode: 'sender',
-              });
+              } as ConnectionStatus);
               this.mainWindow?.webContents.send(IPC_CHANNELS.CONNECTION_LOST, {
                 mode: 'sender',
                 reason: 'Receiver disconnected from the server',
-              });
+              } as ConnectionLostInfo);
 
               // Only handle disconnect if not intentionally stopping
               if (!this.isStopping) {
@@ -287,10 +291,10 @@ export class LocalFileTransferService {
   /**
    * Discover available file transfer services on the network
    */
-  discoverServices(): Promise<any[]> {
+  discoverServices(): Promise<DiscoveredService[]> {
     return new Promise((resolve, reject) => {
       try {
-        const services: any[] = [];
+        const services: DiscoveredService[] = [];
 
         // Check if Bonjour is initialized
         if (!this.bonjour) {
@@ -315,7 +319,7 @@ export class LocalFileTransferService {
             addresses: service.addresses,
             port: service.port,
             hostname: service.txt?.hostname || service.name,
-          });
+          } as DiscoveredService);
         });
 
         browser.on('down', (service) => {
@@ -400,7 +404,7 @@ export class LocalFileTransferService {
                   this.mainWindow?.webContents.send(IPC_CHANNELS.CONNECTION_STATUS, {
                     connected: true,
                     mode: 'receiver',
-                  });
+                  } as ConnectionStatus);
                   resolve();
                   return;
                 }
@@ -423,7 +427,7 @@ export class LocalFileTransferService {
           this.mainWindow?.webContents.send(IPC_CHANNELS.CONNECTION_LOST, {
             mode: 'receiver',
             reason: 'Connection error: ' + err.message,
-          });
+          } as ConnectionLostInfo);
           if (!isResolved) {
             isResolved = true;
             reject(err);
@@ -435,11 +439,11 @@ export class LocalFileTransferService {
           this.mainWindow?.webContents.send(IPC_CHANNELS.CONNECTION_STATUS, {
             connected: false,
             mode: 'receiver',
-          });
+          } as ConnectionStatus);
           this.mainWindow?.webContents.send(IPC_CHANNELS.CONNECTION_LOST, {
             mode: 'receiver',
             reason: 'Sender disconnected or connection was lost',
-          });
+          } as ConnectionLostInfo);
         });
 
         this.client.on('end', () => {
@@ -679,7 +683,7 @@ export class LocalFileTransferService {
               totalBytes: this.currentFileMetadata.fileSize,
               currentFile: this.currentFileMetadata.currentFile,
               totalFiles: this.currentFileMetadata.totalFiles,
-            });
+            } as FileProgress);
 
             // Move buffer forward
             this.dataBuffer = this.dataBuffer.subarray(bytesToRead);
@@ -772,7 +776,7 @@ export class LocalFileTransferService {
         savePath,
         currentFile: this.currentFileMetadata.currentFile,
         totalFiles: this.currentFileMetadata.totalFiles,
-      });
+      } as ReceivedFile);
 
       if (this.currentFileMetadata.currentFile === this.currentFileMetadata.totalFiles) {
         logger.success('All files received!');
