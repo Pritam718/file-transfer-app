@@ -241,6 +241,7 @@ function resetConnectionUI(mode) {
 
 async function cleanupConnection() {
   try {
+    console.log('Cleaning up connection for mode:', currentMode);
     if (currentMode === 'sender') {
       await window.electronAPI.stopSender();
       console.log('Sender stopped');
@@ -267,6 +268,7 @@ document.querySelectorAll('.close-modal').forEach((btn) => {
   btn.addEventListener('click', () => {
     const modalId = btn.getAttribute('data-modal');
     const modal = document.getElementById(modalId);
+    console.log('rrrrrrrrrrrrrrrrrrr');
 
     // If closing sender or receiver modal while connected, warn user
     if ((modalId === 'sender-modal' || modalId === 'receiver-modal') && isConnected) {
@@ -281,6 +283,7 @@ document.querySelectorAll('.close-modal').forEach((btn) => {
       }
 
       // Cleanup connection
+      console.log('Cleaning up connection before closing modal...');
       cleanupConnection();
     }
 
@@ -289,6 +292,8 @@ document.querySelectorAll('.close-modal').forEach((btn) => {
     // Reset transfer type when closing sender or receiver modals
     if (modalId === 'sender-modal' || modalId === 'receiver-modal') {
       transferType = null;
+      console.log('Cleaning up connection before closing modal...');
+      cleanupConnection();
     }
   });
 });
@@ -320,12 +325,21 @@ helpButton.addEventListener('click', () => {
 senderModeBtn.addEventListener('click', async () => {
   try {
     modals.mode.style.display = 'none';
-    modals.sender.style.display = 'block';
     currentMode = 'sender';
     console.log('Selected transfer type:', transferType);
 
     if (transferType === 'local') {
-      await localSender();
+      modals.sender.style.display = 'block';
+      const toggleManualDetailsBtn = document.getElementById('toggle-manual-details');
+      if (toggleManualDetailsBtn) {
+        toggleManualDetailsBtn.style.display = 'block';
+      }
+      const manualConnectionDetails = document.getElementById('manual-connection-details');
+      if (manualConnectionDetails) {
+        manualConnectionDetails.style.display = 'none';
+      }
+
+      await localSender(transferType);
     } else if (transferType === 'remote') {
       await remoteSender();
     } else if (transferType === 'secure') {
@@ -339,7 +353,7 @@ senderModeBtn.addEventListener('click', async () => {
   }
 });
 
-async function localSender() {
+async function localSender(transferType) {
   // Implementation for local sender mode (P2P on same network)
   console.log('Starting LOCAL sender mode - P2P transfer on same network');
 
@@ -357,7 +371,7 @@ async function localSender() {
     'Starting local server...';
 
   // Start sender mode - REAL IMPLEMENTATION
-  const result = await window.electronAPI.startSender();
+  const result = await window.electronAPI.startSender(transferType);
 
   // Display hostname and connection code
   const hostname = result.hostname || 'Unknown Device';
@@ -382,10 +396,6 @@ async function remoteSender() {
   alert(
     '🌐 Remote Transfer\n\nThis feature allows file transfer over the internet.\n\nComing soon! Currently only local network transfer is supported.'
   );
-
-  // Close the modal since feature is not available
-  modals.sender.style.display = 'none';
-  currentMode = null;
 }
 
 async function secureSender() {
@@ -396,10 +406,6 @@ async function secureSender() {
   alert(
     '🔐 Secure Transfer\n\nThis feature adds end-to-end encryption to file transfers.\n\nComing soon! Current transfers use basic TCP without encryption.'
   );
-
-  // Close the modal since feature is not available
-  modals.sender.style.display = 'none';
-  currentMode = null;
 }
 
 // Toggle Manual Connection Details
@@ -431,10 +437,19 @@ let selectedSender = null;
 receiverModeBtn.addEventListener('click', async () => {
   try {
     modals.mode.style.display = 'none';
-    modals.receiver.style.display = 'block';
     currentMode = 'receiver';
 
     if (transferType === 'local') {
+      modals.receiver.style.display = 'block';
+      const toggleManualDetailsBtn = document.getElementById('toggle-manual-details');
+      if (toggleManualDetailsBtn) {
+        toggleManualDetailsBtn.style.display = 'block';
+      }
+      const manualConnectionDetails = document.getElementById('manual-connection-details');
+      if (manualConnectionDetails) {
+        manualConnectionDetails.style.display = 'none';
+      }
+
       await localReceiver();
     } else if (transferType === 'remote') {
       await remoteReceiver();
@@ -478,10 +493,6 @@ async function remoteReceiver() {
   alert(
     '🌐 Remote Transfer\n\nThis feature allows file transfer over the internet.\n\nComing soon! Currently only local network transfer is supported.'
   );
-
-  // Close the modal since feature is not available
-  modals.receiver.style.display = 'none';
-  currentMode = null;
 }
 
 async function secureReceiver() {
@@ -492,10 +503,6 @@ async function secureReceiver() {
   alert(
     '🔐 Secure Transfer\n\nThis feature adds end-to-end encryption to file transfers.\n\nComing soon! Current transfers use basic TCP without encryption.'
   );
-
-  // Close the modal since feature is not available
-  modals.receiver.style.display = 'none';
-  currentMode = null;
 }
 
 // Function to discover available senders
@@ -1122,6 +1129,8 @@ window.addEventListener('click', (event) => {
       // Reset transfer type when closing sender or receiver modals
       if (key === 'sender' || key === 'receiver') {
         transferType = null;
+        console.log('Cleaning up connection before closing modal...');
+        cleanupConnection();
       }
     }
   });

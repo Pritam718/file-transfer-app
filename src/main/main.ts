@@ -79,7 +79,6 @@ function createWindow() {
     .catch((error) => logger.error('Failed to load application', error));
 
   win.setTitle(APP_CONFIG.name);
-  win.setMenu(null); // Remove menu bar completely
 
   // Open DevTools in development
   if (process.env.NODE_ENV === 'development') {
@@ -91,6 +90,8 @@ function createWindow() {
 
 void app.whenReady().then(() => {
   logger.info(`Starting ${APP_CONFIG.name} v${APP_CONFIG.version}`);
+  app.commandLine.appendSwitch('disable-features', 'UseOzonePlatform');
+
   createWindow();
 
   app.on('activate', () => {
