@@ -44,7 +44,8 @@ const IPC_CHANNELS = {
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
   // File transfer operations
-  startSender: () => ipcRenderer.invoke(IPC_CHANNELS.START_SENDER),
+  startSender: (transferType?: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.START_SENDER, transferType),
   stopSender: () => ipcRenderer.invoke(IPC_CHANNELS.STOP_SENDER),
   connectToSender: (ip: string, port: number, code: string, saveDir?: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.CONNECT_RECEIVER, ip, port, code, saveDir),

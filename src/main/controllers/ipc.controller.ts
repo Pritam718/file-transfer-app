@@ -6,24 +6,33 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron';
 import { getLocalIPAddress } from '../lib/network.lib';
 import { LocalFileTransferService } from '../services/localFileTransfer.service';
+import RemoteFileTransferService from '../services/remoteFileTransfer.service';
 import { IPC_CHANNELS } from '../utils/constants';
 import { logger } from '../utils/logger';
 
 let localTransferService: LocalFileTransferService | null = null;
+let remoteTransferService: RemoteFileTransferService | null = null;
 
 /**
  * Setup all IPC handlers
  */
 export function setupIPCHandlers(mainWindow: BrowserWindow): void {
   localTransferService = new LocalFileTransferService(mainWindow);
+  remoteTransferService = new RemoteFileTransferService(mainWindow);
 
   // Start sender mode
-  ipcMain.handle(IPC_CHANNELS.START_SENDER, async (_event, _transferType?: string) => {
+  ipcMain.handle(IPC_CHANNELS.START_SENDER, async (_event, transferType?: string) => {
     try {
-      logger.loading('Starting sender mode...');
-      const result = await localTransferService!.startSender();
-      logger.success('Sender mode started successfully');
-      return result;
+      logger.loading('Starting sender mode...', transferType);
+      if (transferType?.trim() === 'remote') {
+        const result = await remoteTransferService!.startSender();
+        logger.success('Remote sender mode started successfully');
+        return result; // Remote mode doesn't provide IP/port/code
+      } else {
+        const result = await localTransferService!.startSender();
+        logger.success('Sender mode started successfully');
+        return result;
+      }
     } catch (err) {
       const error = err as Error;
       logger.error('Failed to start sender:', error.message);
@@ -32,9 +41,13 @@ export function setupIPCHandlers(mainWindow: BrowserWindow): void {
   });
 
   // Stop sender mode
-  ipcMain.handle(IPC_CHANNELS.STOP_SENDER, (_event, _transferType?: string) => {
+  ipcMain.handle(IPC_CHANNELS.STOP_SENDER, async (_event, transferType?: string) => {
     try {
-      localTransferService!.stopSender();
+      if (transferType?.trim() === 'remote') {
+        await remoteTransferService!.stopSender();
+      } else {
+        localTransferService!.stopSender();
+      }
       return { success: true };
     } catch (err) {
       const error = err as Error;
@@ -181,4 +194,16 @@ export function cleanupIPCHandlers(): void {
     localTransferService.cleanup();
     localTransferService = null;
   }
+  if (remoteTransferService) {
+    remoteTransferService.cleanup();
+    remoteTransferService = null;
+  }
+
+  // Remove all IPC handlers
+  Object.values(IPC_CHANNELS).forEach((channel) => {
+    ipcMain.removeHandler(channel);
+    ipcMain.removeAllListeners(channel);
+  });
+
+  logger.info('IPC handlers cleaned up');
 }

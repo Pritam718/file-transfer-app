@@ -41,6 +41,10 @@ let isConnected = false;
 let transferType = null;
 let isTransferring = false; // Track if a transfer is currently in progress
 
+// Remote transfer (PeerJS) state - runs in renderer process
+let remotePeer = null;
+let remoteConnection = null;
+
 // Load saved path from localStorage
 try {
   const savedPath = localStorage.getItem('lastSavePath');
@@ -297,12 +301,26 @@ function resetConnectionUI(mode) {
 
 async function cleanupConnection() {
   try {
-    console.log('Cleaning up connection for mode:', currentMode);
+    console.log('Cleaning up connection for mode:', currentMode, 'transferType:', transferType);
+
+    // Cleanup remote peer connections (renderer-side PeerJS)
+    if (remoteConnection) {
+      remoteConnection.close();
+      remoteConnection = null;
+      console.log('Remote connection closed');
+    }
+    if (remotePeer) {
+      remotePeer.destroy();
+      remotePeer = null;
+      console.log('Remote peer destroyed');
+    }
+
+    // Cleanup backend connections
     if (currentMode === 'sender') {
-      await window.electronAPI.stopSender();
+      await window.electronAPI.stopSender(transferType);
       console.log('Sender stopped');
     } else if (currentMode === 'receiver') {
-      await window.electronAPI.disconnectReceiver();
+      await window.electronAPI.disconnectReceiver(transferType);
       console.log('Receiver disconnected');
     }
 
@@ -310,6 +328,7 @@ async function cleanupConnection() {
     currentMode = null;
     selectedFilePaths = [];
     saveDirectory = '';
+    transferType = null;
   } catch (error) {
     console.error('Error during cleanup:', error);
   }
@@ -347,9 +366,9 @@ document.querySelectorAll('.close-modal').forEach((btn) => {
 
     // Reset transfer type when closing sender or receiver modals
     if (modalId === 'sender-modal' || modalId === 'receiver-modal') {
-      transferType = null;
       console.log('Cleaning up connection before closing modal...');
       cleanupConnection();
+      transferType = null;
     }
   });
 });
@@ -397,9 +416,9 @@ senderModeBtn.addEventListener('click', async () => {
 
       await localSender(transferType);
     } else if (transferType === 'remote') {
-      await remoteSender();
+      await remoteSender(transferType);
     } else if (transferType === 'secure') {
-      await secureSender();
+      await secureSender(transferType);
     }
   } catch (error) {
     console.error('Failed to start sender:', error);
@@ -444,20 +463,113 @@ async function localSender(transferType) {
     'Waiting for receiver to connect (Local Network)...';
 }
 
-async function remoteSender() {
+async function remoteSender(transferType) {
   // Implementation for remote sender mode (over internet)
-  console.log('Starting REMOTE sender mode - internet transfer');
+  console.log('Starting REMOTE sender mode - internet transfer via PeerJS');
 
-  // TODO: Implement relay server or WebRTC for remote transfers
-  appuiAlert.show({
-    title: '🌐 Remote Transfer',
-    message:
-      'This feature allows file transfer over the internet.\n\nComing soon! Currently only local network transfer is supported.',
-    confirm: false,
-  });
+  try {
+    // Initialize PeerJS in renderer process (where WebRTC is available)
+    if (typeof Peer === 'undefined') {
+      throw new Error('PeerJS library not loaded');
+    }
+
+    remotePeer = new Peer({
+      host: '0.peerjs.com',
+      secure: true,
+      port: 443,
+      debug: 2,
+    });
+
+    // Show modal while connecting
+    document.getElementById('service-name').textContent = 'Loading...';
+    document.getElementById('connection-code').textContent = 'Loading...';
+    modals.sender.style.display = 'block';
+    document.querySelector('#sender-modal .status-message span:last-child').textContent =
+      'Connecting to PeerJS server...';
+
+    remotePeer.on('open', (id) => {
+      console.log('PeerJS connected! Peer ID:', id);
+
+      // Display peer ID as connection code
+      document.getElementById('service-name').textContent = 'Remote Transfer (Internet)';
+      document.getElementById('connection-code').textContent = id;
+
+      // Hide IP/Port for remote mode
+      const senderIpEl = document.getElementById('sender-ip');
+      const senderPortEl = document.getElementById('sender-port');
+      if (senderIpEl) senderIpEl.textContent = 'N/A (P2P)';
+      if (senderPortEl) senderPortEl.textContent = 'N/A (P2P)';
+
+      document.querySelector('#sender-modal .status-message span:last-child').textContent =
+        'Waiting for receiver to connect (via Internet)...';
+
+      appuiToast.success('Remote sender ready! Share the code with receiver.', 3000);
+    });
+
+    remotePeer.on('connection', async (conn) => {
+      console.log('Receiver connected via PeerJS:', conn.peer);
+      remoteConnection = conn;
+
+      isConnected = true;
+      document.querySelector('#sender-modal .status-message span:last-child').textContent =
+        'Receiver connected! Ready to send files.';
+
+      appuiToast.success('Receiver connected via internet!', 3000);
+
+      // Show send files button
+      if (sendFilesBtn) {
+        sendFilesBtn.style.display = 'block';
+      }
+
+      // Setup connection handlers
+      conn.on('data', (data) => {
+        console.log('Received data from receiver:', data);
+        // Handle acknowledgments, etc.
+      });
+
+      conn.on('close', () => {
+        console.log('Receiver disconnected');
+        isConnected = false;
+        appuiToast.warn('Receiver disconnected', 3000);
+        cleanupConnection();
+      });
+
+      conn.on('error', (err) => {
+        console.error('Connection error:', err);
+        appuiToast.error('Connection error: ' + err.message, 5000);
+        cleanupConnection();
+      });
+
+      // Call backend to register remote mode
+      await window.electronAPI.startSender(transferType);
+    });
+
+    remotePeer.on('error', (err) => {
+      console.error('PeerJS error:', err);
+      appuiToast.error('PeerJS error: ' + err.message, 5000);
+      modals.sender.style.display = 'none';
+      currentMode = null;
+
+      if (remotePeer) {
+        remotePeer.destroy();
+        remotePeer = null;
+      }
+    });
+
+    remotePeer.on('disconnected', () => {
+      console.warn('Disconnected from PeerJS server, attempting to reconnect...');
+      appuiToast.warn('Connection lost, reconnecting...', 3000);
+      remotePeer.reconnect();
+    });
+  } catch (error) {
+    console.error('Failed to start remote sender:', error);
+    appuiToast.error('Failed to start remote sender: ' + error.message, 5000);
+    modals.sender.style.display = 'none';
+    currentMode = null;
+  }
 }
 
-async function secureSender() {
+async function secureSender(transferType) {
   // Implementation for secure sender mode (encrypted transfer)
   console.log('Starting SECURE sender mode - encrypted transfer');
 
@@ -549,15 +661,83 @@ async function localReceiver() {
 
 async function remoteReceiver() {
   // Implementation for remote receiver mode (over internet)
-  console.log('Starting REMOTE receiver mode - internet transfer');
+  console.log('Starting REMOTE receiver mode - internet transfer via PeerJS');
 
-  // TODO: Implement relay server or WebRTC for remote transfers
-  appuiAlert.show({
-    title: '🌐 Remote Transfer',
-    message:
-      'This feature allows file transfer over the internet.\n\nComing soon! Currently only local network transfer is supported.',
-    confirm: false,
-  });
+  try {
+    // Initialize PeerJS in renderer process (where WebRTC is available)
+    if (typeof Peer === 'undefined') {
+      throw new Error('PeerJS library not loaded');
+    }
+
+    // Show modal and setup UI for remote receiver
+    modals.receiver.style.display = 'block';
+
+    // Hide auto-discovery section, show manual connection for remote mode
+    const autoDiscoverySection = document.getElementById('auto-discovery-section');
+    const manualConnectionSection = document.getElementById('manual-connection-section');
+    if (autoDiscoverySection) autoDiscoverySection.style.display = 'none';
+    if (manualConnectionSection) {
+      manualConnectionSection.style.display = 'none';
+    }
+
+    // Show code entry section for remote peer ID
+    document.getElementById('receiver-setup').style.display = 'none';
+    document.getElementById('receiver-code-entry').style.display = 'block';
+    document.getElementById('receiver-transfer').style.display = 'none';
+
+    // Update UI to show we're in remote mode
+    document.getElementById('selected-sender-name').textContent = 'Remote Sender (Internet)';
+
+    // Initialize PeerJS peer for receiver
+    remotePeer = new Peer({
+      host: '0.peerjs.com',
+      secure: true,
+      port: 443,
+      debug: 2,
+    });
+
+    // Show connecting state
+    appuiToast.info('Connecting to PeerJS server...', 3000);
+
+    remotePeer.on('open', (id) => {
+      console.log('PeerJS receiver ready! Peer ID:', id);
+      appuiToast.success('Ready to connect to sender!', 3000);
+
+      // Focus on code input
+      const codeInput = document.getElementById('receiver-code-input');
+      if (codeInput) {
+        codeInput.value = '';
+        codeInput.placeholder = 'Enter sender peer ID';
+        setTimeout(() => codeInput.focus(), 100);
+      }
+    });
+
+    remotePeer.on('error', (err) => {
+      console.error('PeerJS error:', err);
+      appuiToast.error('PeerJS error: ' + err.message, 5000);
+      modals.receiver.style.display = 'none';
+      currentMode = null;
+
+      if (remotePeer) {
+        remotePeer.destroy();
+        remotePeer = null;
+      }
+    });
+
+    remotePeer.on('disconnected', () => {
+      console.warn('Disconnected from PeerJS server, attempting to reconnect...');
+      appuiToast.warn('Connection lost, reconnecting...', 3000);
+      remotePeer.reconnect();
+    });
+
+    // Note: Connect button handler is in the main connectBtn.addEventListener
+    // It checks transferType to handle both local and remote modes
+  } catch (error) {
+    console.error('Failed to start remote receiver:', error);
+    appuiToast.error('Failed to start remote receiver: ' + error.message, 5000);
+    modals.receiver.style.display = 'none';
+    currentMode = null;
+  }
 }
 
 async function secureReceiver() {
@@ -580,6 +760,7 @@ async function discoverAvailableSenders() {
     document.getElementById('receiver-scanning').style.display = 'block';
     document.getElementById('receiver-setup').style.display = 'none';
     document.getElementById('receiver-code-entry').style.display = 'none';
+    document.getElementById('auto-discovery-section').style.display = 'block';
 
     console.log('Scanning for senders...');
 
@@ -660,13 +841,153 @@ function selectSender(index) {
   // Clear and focus code input
   const codeInput = document.getElementById('receiver-code-input');
   codeInput.value = '';
+  codeInput.placeholder = 'XXX-XXX'; // Local transfer format
   setTimeout(() => codeInput.focus(), 100);
 }
 
 // Receiver connection - REAL IMPLEMENTATION
 connectBtn.addEventListener('click', async () => {
-  const code = document.getElementById('receiver-code-input').value.trim().toUpperCase();
   const currentSavePath = document.getElementById('save-location').value.trim();
+
+  // Handle REMOTE transfer (PeerJS P2P over internet)
+  if (transferType === 'remote') {
+    const peerID = document.getElementById('receiver-code-input').value.trim();
+
+    if (!peerID) {
+      appuiToast.warn('Please enter the sender peer ID', 4000);
+      return;
+    }
+
+    try {
+      connectBtn.textContent = '⏳ Connecting...';
+      connectBtn.disabled = true;
+
+      // Connect to sender's peer ID
+      console.log('Connecting to sender peer:', peerID);
+      remoteConnection = remotePeer.connect(peerID, {
+        reliable: true,
+      });
+
+      remoteConnection.on('open', () => {
+        console.log('Connected to sender via PeerJS!');
+        isConnected = true;
+
+        // Update UI to show connected state
+        document.getElementById('receiver-code-entry').style.display = 'none';
+        document.getElementById('receiver-transfer').style.display = 'block';
+
+        // Update save path display
+        const savePathDisplay = document.getElementById('save-path-display');
+        if (savePathDisplay) {
+          const saveLoc = document.getElementById('save-location').value.trim();
+          saveDirectory = saveLoc || '';
+          savePathDisplay.textContent = saveDirectory || 'Downloads folder';
+
+          // Cache save path
+          if (saveDirectory) {
+            try {
+              localStorage.setItem('lastSavePath', saveDirectory);
+            } catch (e) {
+              console.warn('Could not save path:', e);
+            }
+          }
+        }
+
+        appuiToast.success('Connected to sender! Waiting for files...', 3000);
+
+        // Reset connect button
+        connectBtn.textContent = '🔗 Connect to Sender';
+        connectBtn.disabled = false;
+      });
+
+      remoteConnection.on('data', async (data) => {
+        console.log('Received data from sender:', data);
+
+        // Handle file transfer data
+        if (data.type === 'file-start') {
+          // File transfer starting
+          console.log('Starting file transfer:', data);
+
+          // Create file item in UI
+          const fileList = document.getElementById('received-files-list');
+          const fileItem = document.createElement('div');
+          fileItem.className = 'file-item';
+          fileItem.dataset.fileNumber = data.currentFile;
+          fileItem.dataset.fileName = data.fileName;
+          fileItem.innerHTML = `
+            <span class="file-icon">📄</span>
+            <div class="file-info">
+              <div class="file-name">${data.fileName}</div>
+              <div class="file-size">Receiving...</div>
+            </div>
+            <span class="file-status">⬇️</span>
+          `;
+          fileList.appendChild(fileItem);
+        } else if (data.type === 'file-chunk') {
+          // File chunk received - update progress
+          updateFileProgress({
+            currentFile: data.currentFile,
+            fileName: data.fileName,
+            receivedBytes: data.bytesTransferred,
+            totalBytes: data.fileSize,
+            progress: data.progress,
+          });
+        } else if (data.type === 'file-complete') {
+          // File transfer complete
+          console.log('File transfer complete:', data.fileName);
+
+          // Mark file as complete
+          updateReceivedFileComplete({
+            currentFile: data.currentFile,
+            fileName: data.fileName,
+            fileSize: data.fileSize,
+            savePath: saveDirectory || 'Downloads',
+          });
+
+          // Send acknowledgment
+          if (remoteConnection) {
+            remoteConnection.send({ type: 'ack', fileName: data.fileName });
+          }
+        } else if (data.type === 'transfer-complete') {
+          // All files transferred
+          console.log('All files received!');
+          appuiToast.success('All files received successfully!', 4000);
+        }
+      });
+
+      remoteConnection.on('close', () => {
+        console.log('Sender disconnected');
+        isConnected = false;
+        appuiToast.warn('Sender disconnected', 3000);
+
+        // Reset UI
+        setTimeout(() => {
+          appuiAlert.show({
+            title: '🔌 Sender Disconnected',
+            message:
+              'The sender has closed the connection.\n\nPlease close this window and start a new transfer if needed.',
+            confirm: false,
+          });
+        }, 100);
+      });
+
+      remoteConnection.on('error', (err) => {
+        console.error('Connection error:', err);
+        appuiToast.error('Connection error: ' + err.message, 5000);
+        connectBtn.textContent = '🔗 Connect to Sender';
+        connectBtn.disabled = false;
+      });
+    } catch (error) {
+      console.error('Failed to connect:', error);
+      appuiToast.error('Failed to connect: ' + error.message, 5000);
+      connectBtn.textContent = '🔗 Connect to Sender';
+      connectBtn.disabled = false;
+    }
+    return; // Exit early for remote transfer
+  }
+
+  // Handle LOCAL transfer (TCP on same network)
+  const code = document.getElementById('receiver-code-input').value.trim().toUpperCase();
 
   if (!code || code.length < 7) {
     appuiToast.warn('Please enter the complete connection code (format: XXX-XXX)', 4000);
@@ -891,6 +1212,7 @@ if (manualProceedBtn) {
     // Clear and focus code input
     const codeInput = document.getElementById('receiver-code-input');
     codeInput.value = '';
+    codeInput.placeholder = 'XXX-XXX'; // Local transfer format
     setTimeout(() => codeInput.focus(), 100);
   });
 }
@@ -899,19 +1221,30 @@ if (manualProceedBtn) {
 const codeInput = document.getElementById('receiver-code-input');
 if (codeInput) {
   codeInput.addEventListener('input', (e) => {
-    let value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    // Only apply local transfer formatting (XXX-XXX) for local transfers
+    // Remote transfers use full peer IDs like: b5882acc-568d-4f19-917a-48c152b553cd
+    if (transferType === 'local') {
+      let value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
 
-    // Auto-add hyphen after 3 characters (format: XXX-XXX)
-    if (value.length > 3) {
-      value = value.slice(0, 3) + '-' + value.slice(3, 6);
+      // Auto-add hyphen after 3 characters (format: XXX-XXX)
+      if (value.length > 3) {
+        value = value.slice(0, 3) + '-' + value.slice(3, 6);
+      }
+
+      e.target.value = value;
     }
-
-    e.target.value = value;
+    // For remote transfers, allow any characters (peer IDs can contain lowercase, hyphens, etc.)
   });
 
-  // Limit to 7 characters (XXX-XXX)
-  codeInput.setAttribute('maxlength', '7');
-  codeInput.setAttribute('placeholder', 'XXX-XXX');
+  if (transferType === 'local') {
+    // Set initial attributes for local transfer (will be updated when mode is selected)
+    codeInput.setAttribute('maxlength', '7'); // Allow long peer IDs
+    codeInput.setAttribute('placeholder', 'Enter connection code');
+  } else if (transferType === 'remote') {
+    // Set initial attributes for remote transfer (PeerJS peer ID)
+    codeInput.setAttribute('maxlength', '32'); // Peer IDs can be long
+    codeInput.setAttribute('placeholder', 'Enter sender peer ID');
+  }
 }
 
 // Browse folder - REAL IMPLEMENTATION
@@ -1279,9 +1612,9 @@ window.addEventListener('click', async (event) => {
 
       // Reset transfer type when closing sender or receiver modals
       if (key === 'sender' || key === 'receiver') {
-        transferType = null;
         console.log('Cleaning up connection before closing modal...');
         cleanupConnection();
+        transferType = null;
       }
     }
   }
@@ -1314,9 +1647,9 @@ document.addEventListener('keydown', async (event) => {
 
         // Reset transfer type when closing sender or receiver modals
         if (key === 'sender' || key === 'receiver') {
-          transferType = null;
           console.log('Cleaning up connection before closing modal...');
           cleanupConnection();
+          transferType = null;
         }
       }
     }
