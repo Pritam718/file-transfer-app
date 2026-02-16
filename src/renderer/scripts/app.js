@@ -651,6 +651,16 @@ async function remoteReceiver() {
     updateUIElement('receiver-code-entry', 'display', 'block');
     updateUIElement('receiver-transfer', 'display', 'none');
 
+    // Load saved path from localStorage (same as local receiver)
+    const savedPath = localStorage.getItem('lastSavePath');
+    if (savedPath && inputs.saveLocation) {
+      inputs.saveLocation.value = savedPath;
+      state.saveDirectory = savedPath;
+    } else if (inputs.saveLocation) {
+      inputs.saveLocation.value = '';
+      state.saveDirectory = '';
+    }
+
     if (inputs.receiverCode) {
       inputs.receiverCode.value = '';
       inputs.receiverCode.placeholder = 'Enter sender peer ID';
@@ -800,9 +810,23 @@ buttons.connect.addEventListener('click', async () => {
 
 async function handleRemoteConnection() {
   const peerID = inputs.receiverCode.value.trim();
+  const currentSavePath = inputs.saveLocation.value.trim();
 
+  // Validate peer ID
   if (!peerID) {
     appuiToast.warn('Please enter the sender peer ID', 4000);
+    return;
+  }
+
+  // Validate save directory is selected
+  if (!currentSavePath) {
+    appuiToast.warn('⚠️ Please select a save location first!', 4000);
+    appuiAlert.show({
+      title: '📁 Save Location Required',
+      message:
+        'You must select a folder where received files will be saved.\n\nClick the "Browse" button to choose a location.',
+      confirm: false,
+    });
     return;
   }
 
@@ -820,8 +844,8 @@ async function handleRemoteConnection() {
       updateUIElement('receiver-code-entry', 'display', 'none');
       updateUIElement('receiver-transfer', 'display', 'block');
 
-      const saveLoc = inputs.saveLocation.value.trim();
-      state.saveDirectory = saveLoc || '';
+      // Save the selected directory
+      state.saveDirectory = currentSavePath;
 
       const savePathDisplay = document.getElementById('save-path-display');
       if (savePathDisplay) {
@@ -868,13 +892,27 @@ async function handleLocalConnection() {
   const code = inputs.receiverCode.value.trim().toUpperCase();
   const currentSavePath = inputs.saveLocation.value.trim();
 
+  // Validate connection code
   if (!code || code.length < 7) {
     appuiToast.warn('Please enter the complete connection code (format: XXX-XXX)', 4000);
     return;
   }
 
+  // Validate sender is selected
   if (!state.selectedSender) {
     appuiToast.warn('No sender selected. Please go back and select a sender.', 4000);
+    return;
+  }
+
+  // Validate save directory is selected
+  if (!currentSavePath) {
+    appuiToast.warn('⚠️ Please select a save location first!', 4000);
+    appuiAlert.show({
+      title: '📁 Save Location Required',
+      message:
+        'You must select a folder where received files will be saved.\n\nClick the "Browse" button to choose a location.',
+      confirm: false,
+    });
     return;
   }
 
