@@ -93,6 +93,35 @@ function formatFileSize(bytes) {
   return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
 }
 
+/**
+ * Convert Uint8Array to base64 without stack overflow
+ * Processes in chunks to avoid spreading large arrays
+ */
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 8192; // Process 8KB at a time
+  let binary = '';
+
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+    binary += String.fromCharCode.apply(null, chunk);
+  }
+
+  return btoa(binary);
+}
+
+/**
+ * Convert base64 to Uint8Array safely
+ */
+function base64ToArrayBuffer(base64) {
+  const binaryString = atob(base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+
 function savePath(path) {
   try {
     localStorage.setItem('lastSavePath', path);
@@ -140,7 +169,7 @@ function sendDisconnectNotification(reason = 'User closed the connection') {
         type: 'disconnect-request',
         reason: reason,
         mode: state.currentMode,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       });
     } catch (error) {
       console.error('Failed to send disconnect notification:', error);
@@ -161,7 +190,7 @@ async function cleanupConnection() {
     if (state.transferType === 'remote' && state.remoteConnection) {
       sendDisconnectNotification('User closed the connection');
       // Give a brief moment for the message to be sent
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
     }
 
     // Cleanup remote peer connections (renderer-side PeerJS)
@@ -211,7 +240,7 @@ function resetSenderUI() {
   if (modals.sender) {
     modals.sender.style.display = 'none';
   }
-  
+
   updateUIElement('sender-setup', 'display', 'block');
   updateUIElement('sender-transfer', 'display', 'none');
 
@@ -239,7 +268,7 @@ function resetReceiverUI() {
   if (modals.receiver) {
     modals.receiver.style.display = 'none';
   }
-  
+
   updateUIElement('receiver-setup', 'display', 'block');
   updateUIElement('receiver-transfer', 'display', 'none');
   updateUIElement('receiver-code-entry', 'display', 'none');
@@ -506,12 +535,12 @@ buttons.senderMode.addEventListener('click', async () => {
 
 async function localSender() {
   console.log('Starting LOCAL sender mode');
-  
+
   // Reset state from any previous connection
   state.isConnected = false;
   state.isTransferring = false;
   state.selectedFilePaths = [];
-  
+
   modals.sender.style.display = 'block';
 
   if (buttons.toggleManualDetails) buttons.toggleManualDetails.style.display = 'block';
@@ -544,7 +573,7 @@ async function remoteSender() {
     state.isConnected = false;
     state.isTransferring = false;
     state.selectedFilePaths = [];
-    
+
     state.remotePeer = initializePeerJS();
 
     modals.sender.style.display = 'block';
@@ -552,7 +581,7 @@ async function remoteSender() {
     updateUIElement('sender-transfer', 'display', 'none');
     document.getElementById('file-list').innerHTML = '';
     if (buttons.sendFiles) buttons.sendFiles.style.display = 'none';
-    
+
     updateUIElement('service-name', 'text', 'Loading...');
     updateUIElement('connection-code', 'text', 'Loading...');
     const statusMsg = document.querySelector('#sender-modal .status-message span:last-child');
@@ -597,27 +626,27 @@ async function remoteSender() {
 
       conn.on('data', (data) => {
         console.log('Received data from receiver:', data);
-        
+
         // Handle disconnect notification from receiver
         if (data && data.type === 'disconnect-request') {
           console.log('Receiver requested disconnect:', data.reason);
           state.isConnected = false;
-          
+
           appuiToast.warn('Receiver is disconnecting...', 3000);
-          
+
           setTimeout(() => {
             appuiAlert.show({
               title: '🔌 Receiver Disconnected',
               message: `The receiver has closed the connection.\n\nReason: ${data.reason || 'Unknown'}\n\nYou can close this window or wait for a new receiver to connect.`,
               confirm: false,
             });
-            
+
             // Reset sender UI after notification
             resetConnectionUI('sender');
           }, 100);
         }
       });
-      
+
       conn.on('close', () => {
         console.log('Receiver connection closed');
         if (state.isConnected) {
@@ -627,13 +656,14 @@ async function remoteSender() {
           setTimeout(() => {
             appuiAlert.show({
               title: '🔌 Connection Lost',
-              message: 'The connection to receiver was lost.\n\nYou can close this window or wait for a new receiver to connect.',
+              message:
+                'The connection to receiver was lost.\n\nYou can close this window or wait for a new receiver to connect.',
               confirm: false,
             });
           }, 100);
         }
       });
-      
+
       conn.on('error', (err) => {
         console.error('Connection error:', err);
         appuiToast.error('Connection error: ' + err.message, 5000);
@@ -699,29 +729,29 @@ buttons.receiverMode.addEventListener('click', async () => {
 
 async function localReceiver() {
   console.log('Starting LOCAL receiver mode');
-  
+
   // Reset state from any previous connection
   state.isConnected = false;
   state.isTransferring = false;
   state.selectedSender = null;
-  
+
   modals.receiver.style.display = 'block';
 
   // Reset to auto-discovery mode by default
   updateUIElement('auto-discovery-section', 'display', 'block');
   updateUIElement('manual-connection-section', 'display', 'none');
-  
+
   // Reset connection method buttons to default state
   if (buttons.autoDiscover && buttons.manualConnect) {
     buttons.autoDiscover.style.background = '#4caf50'; // Active
-    buttons.manualConnect.style.background = '#666';   // Inactive
+    buttons.manualConnect.style.background = '#666'; // Inactive
   }
 
   if (buttons.toggleManualDetails) buttons.toggleManualDetails.style.display = 'block';
   updateUIElement('manual-connection-details', 'display', 'none');
   updateUIElement('receiver-transfer', 'display', 'none');
   updateUIElement('receiver-code-entry', 'display', 'none');
-  
+
   document.getElementById('received-files-list').innerHTML = '';
 
   // Clear manual input fields
@@ -754,7 +784,7 @@ async function remoteReceiver() {
     state.isConnected = false;
     state.isTransferring = false;
     state.selectedSender = null;
-    
+
     state.remotePeer = initializePeerJS();
 
     modals.receiver.style.display = 'block';
@@ -974,7 +1004,7 @@ async function handleRemoteConnection() {
     });
 
     state.remoteConnection.on('data', handleRemoteData);
-    
+
     state.remoteConnection.on('close', () => {
       console.log('Sender connection closed');
       if (state.isConnected) {
@@ -1086,9 +1116,9 @@ function handleRemoteData(data) {
   if (data.type === 'disconnect-request') {
     console.log('Sender requested disconnect:', data.reason);
     state.isConnected = false;
-    
+
     appuiToast.warn('Sender is disconnecting...', 3000);
-    
+
     setTimeout(() => {
       appuiAlert.show({
         title: '🔌 Sender Disconnected',
@@ -1097,25 +1127,35 @@ function handleRemoteData(data) {
       });
       // Reset UI after notification
       resetConnectionUI('receiver');
-      
     }, 100);
-    
+
     return;
   }
 
   // Handle file metadata
   if (data.type === 'file-meta') {
     const fileCount = Object.keys(incomingFiles).length + 1;
-    
+
     incomingFiles[data.fileName] = {
-      chunks: [],
       totalChunks: data.totalChunks,
       receivedChunks: 0,
       fileSize: data.fileSize,
       fileNumber: fileCount,
-      receivedBytes: 0
+      receivedBytes: 0,
+      streaming: true, // Use streaming mode for all files
     };
-    
+
+    // Initialize file stream on disk
+    window.electronAPI
+      .initFileStream(data.fileName, state.saveDirectory)
+      .then(() => {
+        console.log(`File stream initialized for ${data.fileName}`);
+      })
+      .catch((error) => {
+        console.error(`Failed to initialize file stream: ${error.message}`);
+        appuiToast.error(`Failed to start receiving ${data.fileName}`, 5000);
+      });
+
     // Create file item in UI
     const fileList = document.getElementById('received-files-list');
     const fileItem = document.createElement('div');
@@ -1131,8 +1171,8 @@ function handleRemoteData(data) {
       <span class="file-status">⬇️</span>
     `;
     fileList.appendChild(fileItem);
-    
-    console.log(`Receiving ${data.fileName}: 0/${data.totalChunks} chunks`);
+
+    console.log(`Receiving ${data.fileName}: 0/${data.totalChunks} chunks (streaming mode)`);
     return;
   }
 
@@ -1140,33 +1180,40 @@ function handleRemoteData(data) {
   if (data.type === 'file-chunk') {
     const file = incomingFiles[data.fileName];
     if (file) {
-      // Decode base64 chunk back to Uint8Array
-      const binaryString = atob(data.chunk);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-      file.chunks[data.chunkIndex] = bytes;
-      file.receivedChunks++;
-      file.receivedBytes += bytes.length;
-      
-      const progress = Math.round((file.receivedBytes / file.fileSize) * 100);
-      
-      // Update UI progress every 10 chunks to improve performance
-      if (file.receivedChunks % 10 === 0 || file.receivedChunks === file.totalChunks) {
-        updateFileProgress({
-          currentFile: file.fileNumber,
-          fileName: data.fileName,
-          receivedBytes: file.receivedBytes,
-          totalBytes: file.fileSize,
-          progress: progress
+      // Decode base64 chunk back to Uint8Array using safe method
+      const bytes = base64ToArrayBuffer(data.chunk);
+
+      // Stream directly to disk instead of accumulating in memory
+      window.electronAPI
+        .appendFileChunk(data.fileName, bytes, state.saveDirectory)
+        .then(() => {
+          file.receivedChunks++;
+          file.receivedBytes += bytes.length;
+
+          const progress = Math.round((file.receivedBytes / file.fileSize) * 100);
+
+          // Update UI progress every 10 chunks to improve performance
+          if (file.receivedChunks % 10 === 0 || file.receivedChunks === file.totalChunks) {
+            updateFileProgress({
+              currentFile: file.fileNumber,
+              fileName: data.fileName,
+              receivedBytes: file.receivedBytes,
+              totalBytes: file.fileSize,
+              progress: progress,
+            });
+          }
+
+          // Log progress less frequently (every 50 chunks)
+          if (file.receivedChunks % 50 === 0 || file.receivedChunks === file.totalChunks) {
+            console.log(
+              `Receiving ${data.fileName}: ${file.receivedChunks}/${file.totalChunks} chunks (${progress}%) - streaming to disk`
+            );
+          }
+        })
+        .catch((error) => {
+          console.error(`Failed to write chunk for ${data.fileName}:`, error);
+          appuiToast.error(`Error writing ${data.fileName}: ${error.message}`, 5000);
         });
-      }
-      
-      // Log progress less frequently (every 50 chunks)
-      if (file.receivedChunks % 50 === 0 || file.receivedChunks === file.totalChunks) {
-        console.log(`Receiving ${data.fileName}: ${file.receivedChunks}/${file.totalChunks} chunks (${progress}%)`);
-      }
     }
     return;
   }
@@ -1175,87 +1222,37 @@ function handleRemoteData(data) {
   if (data.type === 'file-complete') {
     const file = incomingFiles[data.fileName];
     if (file) {
-      // Combine all chunks into a single Uint8Array
-      const totalSize = file.chunks.filter(chunk => chunk).reduce((sum, chunk) => sum + chunk.length, 0);
-      const combinedArray = new Uint8Array(totalSize);
-      let offset = 0;
-      
-      for (let i = 0; i < file.chunks.length; i++) {
-        const chunk = file.chunks[i];
-        if (chunk) {
-          combinedArray.set(chunk, offset);
-          offset += chunk.length;
-        }
-      }
+      // Finalize the file stream (already saved incrementally to disk)
+      window.electronAPI
+        .finalizeFile(data.fileName, state.saveDirectory)
+        .then((result) => {
+          // Update UI to show file complete
+          const fileList = document.getElementById('received-files-list');
+          const fileItem = fileList.querySelector(`[data-file-number="${file.fileNumber}"]`);
+          if (fileItem) {
+            const sizeElement = fileItem.querySelector('.file-size');
+            const statusElement = fileItem.querySelector('.file-status');
+            if (sizeElement) {
+              const savePath = result.path || state.saveDirectory || 'Downloads folder';
+              sizeElement.textContent = `${formatFileSize(file.fileSize)} - Saved to ${savePath}`;
+            }
+            if (statusElement) statusElement.textContent = '✅';
+          }
 
-      // Save the file
-      window.electronAPI.saveReceivedFile(
-        data.fileName,
-        combinedArray,
-        state.saveDirectory
-      ).then(() => {
-        // Update UI to show file complete
-        const fileList = document.getElementById('received-files-list');
-        const fileItem = fileList.querySelector(`[data-file-number="${file.fileNumber}"]`);
-        if (fileItem) {
-          const sizeElement = fileItem.querySelector('.file-size');
-          const statusElement = fileItem.querySelector('.file-status');
-          if (sizeElement) sizeElement.textContent = `${formatFileSize(file.fileSize)} - Saved to ${state.saveDirectory}`;
-          if (statusElement) statusElement.textContent = '✅';
-        }
-        
-        delete incomingFiles[data.fileName];
-        appuiToast.success(`${data.fileName} received successfully!`, 4000);
-        
-        // Check if all files received
-        if (Object.keys(incomingFiles).length === 0) {
-          appuiToast.success('All files received successfully!', 4000);
-        }
-      }).catch((error) => {
-        console.error('Failed to save file:', error);
-        appuiToast.error(`Failed to save ${data.fileName}: ${error.message}`, 5000);
-      });
+          delete incomingFiles[data.fileName];
+          appuiToast.success(`${data.fileName} received successfully!`, 4000);
+
+          // Check if all files received
+          if (Object.keys(incomingFiles).length === 0) {
+            appuiToast.success('All files received successfully!', 4000);
+          }
+        })
+        .catch((error) => {
+          console.error('Failed to finalize file:', error);
+          appuiToast.error(`Failed to save ${data.fileName}: ${error.message}`, 5000);
+        });
     }
     return;
-  }
-
-  if (data.type === 'file-start') {
-    const fileList = document.getElementById('received-files-list');
-    const fileItem = document.createElement('div');
-    fileItem.className = 'file-item';
-    fileItem.dataset.fileNumber = data.currentFile;
-    fileItem.dataset.fileName = data.fileName;
-    fileItem.innerHTML = `
-      <span class="file-icon">📄</span>
-      <div class="file-info">
-        <div class="file-name">${data.fileName}</div>
-        <div class="file-size">Receiving...</div>
-      </div>
-      <span class="file-status">⬇️</span>
-    `;
-    fileList.appendChild(fileItem);
-  } else if (data.type === 'file-chunk') {
-    updateFileProgress({
-      currentFile: data.currentFile,
-      fileName: data.fileName,
-      receivedBytes: data.bytesTransferred,
-      totalBytes: data.fileSize,
-      progress: data.progress,
-    });
-  } else if (data.type === 'file-complete') {
-    updateReceivedFileComplete({
-      currentFile: data.currentFile,
-      fileName: data.fileName,
-      fileSize: data.fileSize,
-      savePath: state.saveDirectory || 'Downloads',
-    });
-
-    if (state.remoteConnection) {
-      state.remoteConnection.send({ type: 'ack', fileName: data.fileName });
-    }
-  } else if (data.type === 'transfer-complete') {
-    console.log('All files received!');
-    appuiToast.success('All files received successfully!', 4000);
   }
 }
 
@@ -1573,20 +1570,25 @@ if (buttons.sendFiles) {
 }
 
 async function sendFilesToRemote(selectedFilePaths) {
-  if (!state.remoteConnection || state.remoteConnection.open === false) {
-    appuiToast.error('Not connected to sender. Please connect first.', 5000);
+  if (!state.remoteConnection || !state.remoteConnection.open) {
+    appuiToast.error('Not connected to receiver. Please wait for connection first.', 5000);
+    buttons.sendFiles.textContent = '🚀 Send Files';
+    buttons.sendFiles.disabled = false;
+    state.isTransferring = false;
     return;
   }
   const CHUNK_SIZE = 64 * 1024;
+  let successCount = 0;
+  let failCount = 0;
 
   for (let fileIndex = 0; fileIndex < selectedFilePaths.length; fileIndex++) {
     const filePath = selectedFilePaths[fileIndex];
     const currentFileNumber = fileIndex + 1;
     let filename = '';
-    
+
     try {
       filename = filePath.split(/[/\\]/).pop();
-      
+
       // Get file size first
       const fileSize = await window.electronAPI.getFileSize(filePath);
       const totalChunks = Math.ceil(fileSize / CHUNK_SIZE);
@@ -1596,32 +1598,32 @@ async function sendFilesToRemote(selectedFilePaths) {
         type: 'file-meta',
         fileName: filename,
         fileSize: fileSize,
-        totalChunks: totalChunks
+        totalChunks: totalChunks,
       });
-      
+
       console.log(`Sending ${filename}: ${totalChunks} chunks, ${fileSize} bytes`);
-      
+
       // Send file chunks by reading stream
       let offset = 0;
       let sentBytes = 0;
-      
+
       for (let i = 0; i < totalChunks; i++) {
         // Read chunk from file stream
         const result = await window.electronAPI.readFileChunk(filePath, offset, CHUNK_SIZE);
-        
-        // Convert chunk to base64 for transmission
-        const base64Chunk = btoa(String.fromCharCode(...new Uint8Array(result.chunk)));
-        
+
+        // Convert chunk to base64 for transmission using safe method
+        const base64Chunk = arrayBufferToBase64(result.chunk);
+
         state.remoteConnection.send({
           type: 'file-chunk',
           fileName: filename,
           chunkIndex: i,
-          chunk: base64Chunk
+          chunk: base64Chunk,
         });
-        
+
         sentBytes += result.bytesRead;
         const progress = Math.round((sentBytes / fileSize) * 100);
-        
+
         // Update UI progress every 10 chunks to improve performance
         if (i % 10 === 0 || i === totalChunks - 1) {
           updateFileProgress({
@@ -1629,25 +1631,25 @@ async function sendFilesToRemote(selectedFilePaths) {
             fileName: filename,
             sentBytes: sentBytes,
             totalBytes: fileSize,
-            progress: progress
+            progress: progress,
           });
         }
-        
+
         // Log progress less frequently (every 50 chunks)
         if (i % 50 === 0 || i === totalChunks - 1) {
           console.log(`Sent chunk ${i + 1}/${totalChunks} for ${filename} (${progress}%)`);
         }
-        
+
         offset += result.bytesRead;
       }
-      
+
       // Send file complete
       state.remoteConnection.send({
         type: 'file-complete',
         fileName: filename,
-        fileSize: fileSize
+        fileSize: fileSize,
       });
-      
+
       // Mark file as complete in UI
       const fileItems = document.querySelectorAll('#file-list .file-item');
       const currentItem = fileItems[fileIndex];
@@ -1655,30 +1657,47 @@ async function sendFilesToRemote(selectedFilePaths) {
         const statusElement = currentItem.querySelector('.file-status');
         if (statusElement) statusElement.textContent = '✅';
       }
-      
+
       console.log(`Finished sending file: ${filename}`);
       appuiToast.success(`${filename} sent successfully!`, 3000);
-      
+      successCount++;
     } catch (error) {
       console.error(`Error sending file: ${filename}`, error);
       appuiToast.error(`Failed to send ${filename}: ${error.message}`, 5000);
+      failCount++;
+
+      // Mark file as failed in UI
+      const fileItems = document.querySelectorAll('#file-list .file-item');
+      const currentItem = fileItems[fileIndex];
+      if (currentItem) {
+        const statusElement = currentItem.querySelector('.file-status');
+        if (statusElement) statusElement.textContent = '❌';
+      }
     }
   }
-  
-  // All files sent - match local sender behavior
+
+  // All files processed - show appropriate message
   state.isTransferring = false;
   state.selectedFilePaths = [];
-  
+
   if (buttons.sendFiles) {
-    buttons.sendFiles.textContent = '✅ All Files Sent!';
+    if (failCount === 0) {
+      buttons.sendFiles.textContent = '✅ All Files Sent!';
+      appuiToast.success(`All ${successCount} files sent successfully!`, 4000);
+    } else if (successCount === 0) {
+      buttons.sendFiles.textContent = '❌ All Failed';
+      appuiToast.error(`Failed to send all ${failCount} files!`, 5000);
+    } else {
+      buttons.sendFiles.textContent = '⚠️ Partial Success';
+      appuiToast.warn(`Sent ${successCount} files, ${failCount} failed`, 5000);
+    }
+
     setTimeout(() => {
       buttons.sendFiles.textContent = '🚀 Send Files';
       buttons.sendFiles.disabled = false;
-    }, 2000);
+    }, 3000);
   }
-  appuiToast.success('All files sent successfully!', 4000);
 }
-
 
 // ============================================================================
 // PROGRESS AND STATUS UPDATES
@@ -1711,7 +1730,7 @@ function updateFileProgress(progress) {
     if (progress.progress === 100) {
       statusElement.textContent = state.currentMode === 'sender' ? '✅' : '⏳';
     } else {
-      statusElement.textContent = '⬇️';
+      statusElement.textContent = state.currentMode === 'sender' ? '⬆️' : '⬇️';
     }
   } else {
     console.warn(`[UPDATE] Could not find file item for file ${progress.currentFile}`);

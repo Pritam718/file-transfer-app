@@ -323,10 +323,10 @@ export class LocalFileTransferService {
         });
 
         browser.on('down', (service) => {
-          services.splice(
-            services.findIndex((s) => s.name === service.name),
-            1
-          );
+          const index = services.findIndex((s) => s.name === service.name);
+          if (index !== -1) {
+            services.splice(index, 1);
+          }
         });
 
         browser.on('error', (err: any) => {

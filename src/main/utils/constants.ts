@@ -52,8 +52,14 @@ export const IPC_CHANNELS = {
 
   // File system operations
   SELECT_FILES: 'select-files',
-
   READ_FILE: 'read-file',
+  READ_FILE_AS_BUFFER: 'read-file-as-buffer',
+  READ_FILE_CHUNK: 'read-file-chunk',
+  GET_FILE_SIZE: 'get-file-size',
+  SAVE_RECEIVED_FILE: 'save-received-file',
+  INIT_FILE_STREAM: 'init-file-stream',
+  APPEND_FILE_CHUNK: 'append-file-chunk',
+  FINALIZE_FILE: 'finalize-file',
 
   // Network
   GET_LOCAL_IP: 'get-local-ip',

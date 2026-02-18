@@ -21,9 +21,33 @@ export interface ElectronAPI {
   selectFiles: () => Promise<{ canceled: boolean; filePaths: string[] }>;
   selectFolder: () => Promise<{ canceled: boolean; folderPath: string }>;
   getFilePathFromFile: (file: File) => string | null;
+  readFile: (filePaths: string[]) => Promise<string[]>;
+  readFileAsBuffer: (filePath: string) => Promise<Buffer>;
+  readFileChunk: (
+    filePath: string,
+    offset: number,
+    length: number
+  ) => Promise<{ chunk: Buffer; bytesRead: number; hasMore: boolean }>;
+  getFileSize: (filePath: string) => Promise<number>;
+  saveReceivedFile: (
+    fileName: string,
+    buffer: Uint8Array,
+    saveDir?: string
+  ) => Promise<{ success: boolean; path: string }>;
+  initFileStream: (
+    fileName: string,
+    saveDir?: string
+  ) => Promise<{ success: boolean; path: string }>;
+  appendFileChunk: (
+    fileName: string,
+    chunk: Uint8Array,
+    saveDir?: string
+  ) => Promise<{ success: boolean }>;
+  finalizeFile: (fileName: string, saveDir?: string) => Promise<{ success: boolean; path: string }>;
 
   // Network info
   getLocalIP: () => Promise<string>;
+  discoverServices: () => Promise<any[]>;
 
   // Event listeners
   onConnectionStatus: (callback: (status: ConnectionStatus) => void) => void;

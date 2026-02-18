@@ -1,5 +1,5 @@
 import * as dotenv from 'dotenv';
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, net, protocol } from 'electron';
 import path from 'path';
 import { cleanupIPCHandlers, setupIPCHandlers } from './controllers/ipc.controller';
 import { APP_CONFIG } from './utils/config';
@@ -144,6 +144,31 @@ app.on('ready', () => {
 
 void app.whenReady().then(() => {
   logger.info(`Starting ${APP_CONFIG.name} v${APP_CONFIG.version}`);
+
+  // Register custom protocol for file streaming
+  protocol.handle('app', (request) => {
+    try {
+      const url = request.url;
+
+      // Extract file path from URL: app://stream/encoded/path
+      if (url.startsWith('app://stream')) {
+        const encodedPath = url.slice('app://stream'.length);
+        const filePath = decodeURIComponent(encodedPath);
+
+        logger.info(`Streaming file: ${filePath}`);
+
+        // Return file using net.fetch with file:// protocol
+        return net.fetch('file://' + filePath);
+      }
+
+      // Fallback for unknown app:// URLs
+      return new Response('Not found', { status: 404 });
+    } catch (error) {
+      logger.error('Protocol handler error:', error);
+      return new Response('Error loading resource', { status: 500 });
+    }
+  });
+
   app.commandLine.appendSwitch('disable-features', 'UseOzonePlatform');
 
   // Small delay to ensure splash is visible

@@ -43,7 +43,7 @@ export function setupIPCHandlers(mainWindow: BrowserWindow): void {
   });
 
   // Read file as buffer (for remote transfer)
-  ipcMain.handle('read-file-as-buffer', async (_event, filePath: string) => {
+  ipcMain.handle(IPC_CHANNELS.READ_FILE_AS_BUFFER, (_event, filePath: string) => {
     try {
       const buffer = fs.readFileSync(filePath);
       logger.success(`Read file as buffer: ${path.basename(filePath)}`);
@@ -56,27 +56,30 @@ export function setupIPCHandlers(mainWindow: BrowserWindow): void {
   });
 
   // Read file chunk (for streaming remote transfer)
-  ipcMain.handle('read-file-chunk', async (_event, filePath: string, offset: number, length: number) => {
-    try {
-      const fd = fs.openSync(filePath, 'r');
-      const buffer = Buffer.alloc(length);
-      const bytesRead = fs.readSync(fd, buffer, 0, length, offset);
-      fs.closeSync(fd);
+  ipcMain.handle(
+    IPC_CHANNELS.READ_FILE_CHUNK,
+    (_event, filePath: string, offset: number, length: number) => {
+      try {
+        const fd = fs.openSync(filePath, 'r');
+        const buffer = Buffer.alloc(length);
+        const bytesRead = fs.readSync(fd, buffer, 0, length, offset);
+        fs.closeSync(fd);
 
-      return {
-        chunk: buffer.slice(0, bytesRead),
-        bytesRead: bytesRead,
-        hasMore: bytesRead === length
-      };
-    } catch (err) {
-      const error = err as Error;
-      logger.error(`Failed to read file chunk ${filePath}:`, error.message);
-      throw err;
+        return {
+          chunk: buffer.slice(0, bytesRead),
+          bytesRead: bytesRead,
+          hasMore: bytesRead === length,
+        };
+      } catch (err) {
+        const error = err as Error;
+        logger.error(`Failed to read file chunk ${filePath}:`, error.message);
+        throw err;
+      }
     }
-  });
+  );
 
   // Get file size
-  ipcMain.handle('get-file-size', async (_event, filePath: string) => {
+  ipcMain.handle(IPC_CHANNELS.GET_FILE_SIZE, (_event, filePath: string) => {
     try {
       const stats = fs.statSync(filePath);
       return stats.size;
@@ -87,8 +90,35 @@ export function setupIPCHandlers(mainWindow: BrowserWindow): void {
     }
   });
 
-  // Save received file (for remote transfer)
-  ipcMain.handle('save-received-file', async (_event, fileName: string, buffer: Uint8Array, saveDir?: string) => {
+  // Save received file (for remote transfer - small files)
+  ipcMain.handle(
+    IPC_CHANNELS.SAVE_RECEIVED_FILE,
+    (_event, fileName: string, buffer: Uint8Array, saveDir?: string) => {
+      try {
+        const savePath = saveDir || app.getPath('downloads');
+        const fullPath = path.join(savePath, fileName);
+
+        // Ensure directory exists
+        const dir = path.dirname(fullPath);
+        if (!fs.existsSync(dir)) {
+          fs.mkdirSync(dir, { recursive: true });
+        }
+
+        // Write file
+        fs.writeFileSync(fullPath, Buffer.from(buffer));
+        logger.success(`Saved received file: ${fileName}`);
+
+        return { success: true, path: fullPath };
+      } catch (err) {
+        const error = err as Error;
+        logger.error(`Failed to save received file ${fileName}:`, error.message);
+        throw err;
+      }
+    }
+  );
+
+  // Initialize file stream for large file transfers
+  ipcMain.handle(IPC_CHANNELS.INIT_FILE_STREAM, (_event, fileName: string, saveDir?: string) => {
     try {
       const savePath = saveDir || app.getPath('downloads');
       const fullPath = path.join(savePath, fileName);
@@ -99,14 +129,50 @@ export function setupIPCHandlers(mainWindow: BrowserWindow): void {
         fs.mkdirSync(dir, { recursive: true });
       }
 
-      // Write file
-      fs.writeFileSync(fullPath, Buffer.from(buffer));
-      logger.success(`Saved received file: ${fileName}`);
+      // Create empty file
+      fs.writeFileSync(fullPath, Buffer.alloc(0));
+      logger.info(`Initialized file stream: ${fileName}`);
 
       return { success: true, path: fullPath };
     } catch (err) {
       const error = err as Error;
-      logger.error(`Failed to save received file ${fileName}:`, error.message);
+      logger.error(`Failed to initialize file stream ${fileName}:`, error.message);
+      throw err;
+    }
+  });
+
+  // Append chunk to file stream
+  ipcMain.handle(
+    IPC_CHANNELS.APPEND_FILE_CHUNK,
+    (_event, fileName: string, chunk: Uint8Array, saveDir?: string) => {
+      try {
+        const savePath = saveDir || app.getPath('downloads');
+        const fullPath = path.join(savePath, fileName);
+
+        // Append chunk to file
+        fs.appendFileSync(fullPath, Buffer.from(chunk));
+
+        return { success: true };
+      } catch (err) {
+        const error = err as Error;
+        logger.error(`Failed to append chunk to ${fileName}:`, error.message);
+        throw err;
+      }
+    }
+  );
+
+  // Finalize file stream
+  ipcMain.handle(IPC_CHANNELS.FINALIZE_FILE, (_event, fileName: string, saveDir?: string) => {
+    try {
+      const savePath = saveDir || app.getPath('downloads');
+      const fullPath = path.join(savePath, fileName);
+
+      logger.success(`File transfer complete: ${fileName}`);
+
+      return { success: true, path: fullPath };
+    } catch (err) {
+      const error = err as Error;
+      logger.error(`Failed to finalize file ${fileName}:`, error.message);
       throw err;
     }
   });
@@ -164,7 +230,9 @@ export function setupIPCHandlers(mainWindow: BrowserWindow): void {
   // Disconnect receiver
   ipcMain.handle(IPC_CHANNELS.DISCONNECT_RECEIVER, () => {
     try {
-      localTransferService!.disconnectReceiver();
+      if (localTransferService) {
+        localTransferService.disconnectReceiver();
+      }
       return { success: true };
     } catch (err) {
       const error = err as Error;
@@ -226,25 +294,20 @@ export function setupIPCHandlers(mainWindow: BrowserWindow): void {
     }
   });
 
-  ipcMain.handle(
-    IPC_CHANNELS.READ_FILE,
-    async (_event, filePaths: string[]) => {
-      try {
-        const streamUrls = filePaths.map((filePath) => {
-          return `app://stream${encodeURIComponent(filePath)}`;
-        });
+  // Read file - returns stream URLs (for media playback)
+  ipcMain.handle(IPC_CHANNELS.READ_FILE, (_event, filePaths: string[]) => {
+    try {
+      const streamUrls = filePaths.map((filePath) => {
+        return `app://stream${encodeURIComponent(filePath)}`;
+      });
 
-        return streamUrls;
-      } catch (err) {
-        const error = err as Error;
-        logger.error(
-          'Failed to get stream URL for file URLs:',
-          error.message
-        );
-        throw err;
-      }
+      return streamUrls;
+    } catch (err) {
+      const error = err as Error;
+      logger.error('Failed to get stream URL for file URLs:', error.message);
+      throw err;
     }
-  );
+  });
 
   // Get local IP address
   ipcMain.handle(IPC_CHANNELS.GET_LOCAL_IP, () => {

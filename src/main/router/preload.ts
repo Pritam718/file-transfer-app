@@ -26,8 +26,14 @@ const IPC_CHANNELS = {
 
   // File system operations
   SELECT_FILES: 'select-files',
-
   READ_FILE: 'read-file',
+  READ_FILE_AS_BUFFER: 'read-file-as-buffer',
+  READ_FILE_CHUNK: 'read-file-chunk',
+  GET_FILE_SIZE: 'get-file-size',
+  SAVE_RECEIVED_FILE: 'save-received-file',
+  INIT_FILE_STREAM: 'init-file-stream',
+  APPEND_FILE_CHUNK: 'append-file-chunk',
+  FINALIZE_FILE: 'finalize-file',
 
   // Network
   GET_LOCAL_IP: 'get-local-ip',
@@ -68,21 +74,31 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
   },
 
+  // Read file - get stream URLs (for media playback)
+  readFile: (filePaths: string[]) => ipcRenderer.invoke(IPC_CHANNELS.READ_FILE, filePaths),
+
   // Read file as buffer (for remote transfer)
   readFileAsBuffer: (filePath: string) =>
-    ipcRenderer.invoke('read-file-as-buffer', filePath),
+    ipcRenderer.invoke(IPC_CHANNELS.READ_FILE_AS_BUFFER, filePath),
 
   // Read file chunk (for streaming remote transfer)
   readFileChunk: (filePath: string, offset: number, length: number) =>
-    ipcRenderer.invoke('read-file-chunk', filePath, offset, length),
+    ipcRenderer.invoke(IPC_CHANNELS.READ_FILE_CHUNK, filePath, offset, length),
 
   // Get file size
-  getFileSize: (filePath: string) =>
-    ipcRenderer.invoke('get-file-size', filePath),
+  getFileSize: (filePath: string) => ipcRenderer.invoke(IPC_CHANNELS.GET_FILE_SIZE, filePath),
 
   // Save received file (for remote transfer)
   saveReceivedFile: (fileName: string, buffer: Uint8Array, saveDir?: string) =>
-    ipcRenderer.invoke('save-received-file', fileName, buffer, saveDir),
+    ipcRenderer.invoke(IPC_CHANNELS.SAVE_RECEIVED_FILE, fileName, buffer, saveDir),
+
+  // Streaming file write for large files
+  initFileStream: (fileName: string, saveDir?: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.INIT_FILE_STREAM, fileName, saveDir),
+  appendFileChunk: (fileName: string, chunk: Uint8Array, saveDir?: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.APPEND_FILE_CHUNK, fileName, chunk, saveDir),
+  finalizeFile: (fileName: string, saveDir?: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.FINALIZE_FILE, fileName, saveDir),
 
   // Network info
   getLocalIP: () => ipcRenderer.invoke(IPC_CHANNELS.GET_LOCAL_IP),
