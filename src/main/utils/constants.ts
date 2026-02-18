@@ -53,6 +53,8 @@ export const IPC_CHANNELS = {
   // File system operations
   SELECT_FILES: 'select-files',
 
+  READ_FILE: 'read-file',
+
   // Network
   GET_LOCAL_IP: 'get-local-ip',
   DISCOVER_SERVICES: 'discover-services',
