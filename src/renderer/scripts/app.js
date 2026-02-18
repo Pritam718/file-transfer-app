@@ -132,6 +132,22 @@ function isValidPort(port) {
 // CLEANUP & RESET FUNCTIONS
 // ============================================================================
 
+function sendDisconnectNotification(reason = 'User closed the connection') {
+  if (state.remoteConnection && state.remoteConnection.open) {
+    try {
+      console.log('Sending disconnect notification:', reason);
+      state.remoteConnection.send({
+        type: 'disconnect-request',
+        reason: reason,
+        mode: state.currentMode,
+        timestamp: Date.now()
+      });
+    } catch (error) {
+      console.error('Failed to send disconnect notification:', error);
+    }
+  }
+}
+
 async function cleanupConnection() {
   try {
     console.log(
@@ -140,6 +156,13 @@ async function cleanupConnection() {
       'transferType:',
       state.transferType
     );
+
+    // Send disconnect notification for remote connections before closing
+    if (state.transferType === 'remote' && state.remoteConnection) {
+      sendDisconnectNotification('User closed the connection');
+      // Give a brief moment for the message to be sent
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
 
     // Cleanup remote peer connections (renderer-side PeerJS)
     if (state.remoteConnection) {
@@ -184,6 +207,11 @@ function resetConnectionUI(mode) {
 }
 
 function resetSenderUI() {
+  // Close the sender modal
+  if (modals.sender) {
+    modals.sender.style.display = 'none';
+  }
+  
   updateUIElement('sender-setup', 'display', 'block');
   updateUIElement('sender-transfer', 'display', 'none');
 
@@ -207,6 +235,11 @@ function resetSenderUI() {
 }
 
 function resetReceiverUI() {
+  // Close the receiver modal
+  if (modals.receiver) {
+    modals.receiver.style.display = 'none';
+  }
+  
   updateUIElement('receiver-setup', 'display', 'block');
   updateUIElement('receiver-transfer', 'display', 'none');
   updateUIElement('receiver-code-entry', 'display', 'none');
@@ -403,7 +436,6 @@ async function handleModalClose(modalId) {
         'Closing this window will disconnect the transfer session.\n\nAre you sure you want to close?',
       confirm: true,
     });
-
     if (!shouldClose) return;
 
     await cleanupConnection();
@@ -474,6 +506,12 @@ buttons.senderMode.addEventListener('click', async () => {
 
 async function localSender() {
   console.log('Starting LOCAL sender mode');
+  
+  // Reset state from any previous connection
+  state.isConnected = false;
+  state.isTransferring = false;
+  state.selectedFilePaths = [];
+  
   modals.sender.style.display = 'block';
 
   if (buttons.toggleManualDetails) buttons.toggleManualDetails.style.display = 'block';
@@ -481,7 +519,6 @@ async function localSender() {
   updateUIElement('sender-setup', 'display', 'block');
   updateUIElement('sender-transfer', 'display', 'none');
   document.getElementById('file-list').innerHTML = '';
-  state.selectedFilePaths = [];
   if (buttons.sendFiles) buttons.sendFiles.style.display = 'none';
 
   updateUIElement('service-name', 'text', 'Starting...');
@@ -503,9 +540,19 @@ async function remoteSender() {
   console.log('Starting REMOTE sender mode');
 
   try {
+    // Reset state from any previous connection
+    state.isConnected = false;
+    state.isTransferring = false;
+    state.selectedFilePaths = [];
+    
     state.remotePeer = initializePeerJS();
 
     modals.sender.style.display = 'block';
+    updateUIElement('sender-setup', 'display', 'block');
+    updateUIElement('sender-transfer', 'display', 'none');
+    document.getElementById('file-list').innerHTML = '';
+    if (buttons.sendFiles) buttons.sendFiles.style.display = 'none';
+    
     updateUIElement('service-name', 'text', 'Loading...');
     updateUIElement('connection-code', 'text', 'Loading...');
     const statusMsg = document.querySelector('#sender-modal .status-message span:last-child');
@@ -548,12 +595,45 @@ async function remoteSender() {
 
       if (buttons.sendFiles) buttons.sendFiles.style.display = 'block';
 
-      conn.on('data', (data) => console.log('Received data from receiver:', data));
-      conn.on('close', () => {
-        console.log('Receiver disconnected');
-        state.isConnected = false;
-        appuiToast.warn('Receiver disconnected', 3000);
+      conn.on('data', (data) => {
+        console.log('Received data from receiver:', data);
+        
+        // Handle disconnect notification from receiver
+        if (data && data.type === 'disconnect-request') {
+          console.log('Receiver requested disconnect:', data.reason);
+          state.isConnected = false;
+          
+          appuiToast.warn('Receiver is disconnecting...', 3000);
+          
+          setTimeout(() => {
+            appuiAlert.show({
+              title: '🔌 Receiver Disconnected',
+              message: `The receiver has closed the connection.\n\nReason: ${data.reason || 'Unknown'}\n\nYou can close this window or wait for a new receiver to connect.`,
+              confirm: false,
+            });
+            
+            // Reset sender UI after notification
+            resetConnectionUI('sender');
+          }, 100);
+        }
       });
+      
+      conn.on('close', () => {
+        console.log('Receiver connection closed');
+        if (state.isConnected) {
+          // Only show alert if we haven't already been notified via disconnect-request
+          state.isConnected = false;
+          appuiToast.warn('Receiver disconnected', 3000);
+          setTimeout(() => {
+            appuiAlert.show({
+              title: '🔌 Connection Lost',
+              message: 'The connection to receiver was lost.\n\nYou can close this window or wait for a new receiver to connect.',
+              confirm: false,
+            });
+          }, 100);
+        }
+      });
+      
       conn.on('error', (err) => {
         console.error('Connection error:', err);
         appuiToast.error('Connection error: ' + err.message, 5000);
@@ -619,12 +699,40 @@ buttons.receiverMode.addEventListener('click', async () => {
 
 async function localReceiver() {
   console.log('Starting LOCAL receiver mode');
+  
+  // Reset state from any previous connection
+  state.isConnected = false;
+  state.isTransferring = false;
+  state.selectedSender = null;
+  
   modals.receiver.style.display = 'block';
+
+  // Reset to auto-discovery mode by default
+  updateUIElement('auto-discovery-section', 'display', 'block');
+  updateUIElement('manual-connection-section', 'display', 'none');
+  
+  // Reset connection method buttons to default state
+  if (buttons.autoDiscover && buttons.manualConnect) {
+    buttons.autoDiscover.style.background = '#4caf50'; // Active
+    buttons.manualConnect.style.background = '#666';   // Inactive
+  }
 
   if (buttons.toggleManualDetails) buttons.toggleManualDetails.style.display = 'block';
   updateUIElement('manual-connection-details', 'display', 'none');
   updateUIElement('receiver-transfer', 'display', 'none');
+  updateUIElement('receiver-code-entry', 'display', 'none');
+  
   document.getElementById('received-files-list').innerHTML = '';
+
+  // Clear manual input fields
+  if (inputs.manualIp) {
+    inputs.manualIp.value = '';
+    inputs.manualIp.style.border = ''; // Reset border
+  }
+  if (inputs.manualPort) {
+    inputs.manualPort.value = '';
+    inputs.manualPort.style.border = ''; // Reset border
+  }
 
   const savedPath = localStorage.getItem('lastSavePath');
   if (savedPath && inputs.saveLocation) {
@@ -642,6 +750,11 @@ async function remoteReceiver() {
   console.log('Starting REMOTE receiver mode');
 
   try {
+    // Reset state from any previous connection
+    state.isConnected = false;
+    state.isTransferring = false;
+    state.selectedSender = null;
+    
     state.remotePeer = initializePeerJS();
 
     modals.receiver.style.display = 'block';
@@ -650,6 +763,7 @@ async function remoteReceiver() {
     updateUIElement('receiver-setup', 'display', 'none');
     updateUIElement('receiver-code-entry', 'display', 'block');
     updateUIElement('receiver-transfer', 'display', 'none');
+    document.getElementById('received-files-list').innerHTML = '';
 
     // Load saved path from localStorage (same as local receiver)
     const savedPath = localStorage.getItem('lastSavePath');
@@ -860,18 +974,22 @@ async function handleRemoteConnection() {
     });
 
     state.remoteConnection.on('data', handleRemoteData);
+    
     state.remoteConnection.on('close', () => {
-      console.log('Sender disconnected');
-      state.isConnected = false;
-      appuiToast.warn('Sender disconnected', 3000);
-      setTimeout(() => {
-        appuiAlert.show({
-          title: '🔌 Sender Disconnected',
-          message:
-            'The sender has closed the connection.\n\nPlease close this window and start a new transfer if needed.',
-          confirm: false,
-        });
-      }, 100);
+      console.log('Sender connection closed');
+      if (state.isConnected) {
+        // Only show alert if we haven't already been notified via disconnect-request
+        state.isConnected = false;
+        appuiToast.warn('Sender disconnected', 3000);
+        setTimeout(() => {
+          appuiAlert.show({
+            title: '🔌 Connection Lost',
+            message:
+              'The connection to sender was lost.\n\nPlease close this window and start a new transfer if needed.',
+            confirm: false,
+          });
+        }, 100);
+      }
     });
 
     state.remoteConnection.on('error', (err) => {
@@ -920,6 +1038,13 @@ async function handleLocalConnection() {
     buttons.connect.textContent = '⏳ Connecting...';
     buttons.connect.disabled = true;
 
+    // Log the Bonjour/mDNS discovered IP address
+    console.log('Connecting to sender via Bonjour discovery:');
+    console.log('  IP Address:', state.selectedSender.host);
+    console.log('  Port:', state.selectedSender.port);
+    console.log('  Sender Name:', state.selectedSender.name);
+    console.log('  All Addresses:', state.selectedSender.addresses);
+
     const result = await window.electronAPI.connectToSender(
       state.selectedSender.host,
       state.selectedSender.port,
@@ -951,8 +1076,148 @@ async function handleLocalConnection() {
   }
 }
 
+// Track incoming files for remote transfer
+const incomingFiles = {};
+
 function handleRemoteData(data) {
   console.log('Received data from sender:', data);
+
+  // Handle disconnect notification from sender
+  if (data.type === 'disconnect-request') {
+    console.log('Sender requested disconnect:', data.reason);
+    state.isConnected = false;
+    
+    appuiToast.warn('Sender is disconnecting...', 3000);
+    
+    setTimeout(() => {
+      appuiAlert.show({
+        title: '🔌 Sender Disconnected',
+        message: `The sender has closed the connection.\n\nReason: ${data.reason || 'Unknown'}\n\nPlease close this window and start a new transfer if needed.`,
+        confirm: false,
+      });
+      // Reset UI after notification
+      resetConnectionUI('receiver');
+      
+    }, 100);
+    
+    return;
+  }
+
+  // Handle file metadata
+  if (data.type === 'file-meta') {
+    const fileCount = Object.keys(incomingFiles).length + 1;
+    
+    incomingFiles[data.fileName] = {
+      chunks: [],
+      totalChunks: data.totalChunks,
+      receivedChunks: 0,
+      fileSize: data.fileSize,
+      fileNumber: fileCount,
+      receivedBytes: 0
+    };
+    
+    // Create file item in UI
+    const fileList = document.getElementById('received-files-list');
+    const fileItem = document.createElement('div');
+    fileItem.className = 'file-item';
+    fileItem.dataset.fileNumber = fileCount;
+    fileItem.dataset.fileName = data.fileName;
+    fileItem.innerHTML = `
+      <span class="file-icon">📄</span>
+      <div class="file-info">
+        <div class="file-name">${data.fileName}</div>
+        <div class="file-size">Receiving...</div>
+      </div>
+      <span class="file-status">⬇️</span>
+    `;
+    fileList.appendChild(fileItem);
+    
+    console.log(`Receiving ${data.fileName}: 0/${data.totalChunks} chunks`);
+    return;
+  }
+
+  // Handle file chunks
+  if (data.type === 'file-chunk') {
+    const file = incomingFiles[data.fileName];
+    if (file) {
+      // Decode base64 chunk back to Uint8Array
+      const binaryString = atob(data.chunk);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      file.chunks[data.chunkIndex] = bytes;
+      file.receivedChunks++;
+      file.receivedBytes += bytes.length;
+      
+      const progress = Math.round((file.receivedBytes / file.fileSize) * 100);
+      
+      // Update UI progress every 10 chunks to improve performance
+      if (file.receivedChunks % 10 === 0 || file.receivedChunks === file.totalChunks) {
+        updateFileProgress({
+          currentFile: file.fileNumber,
+          fileName: data.fileName,
+          receivedBytes: file.receivedBytes,
+          totalBytes: file.fileSize,
+          progress: progress
+        });
+      }
+      
+      // Log progress less frequently (every 50 chunks)
+      if (file.receivedChunks % 50 === 0 || file.receivedChunks === file.totalChunks) {
+        console.log(`Receiving ${data.fileName}: ${file.receivedChunks}/${file.totalChunks} chunks (${progress}%)`);
+      }
+    }
+    return;
+  }
+
+  // Handle file complete
+  if (data.type === 'file-complete') {
+    const file = incomingFiles[data.fileName];
+    if (file) {
+      // Combine all chunks into a single Uint8Array
+      const totalSize = file.chunks.filter(chunk => chunk).reduce((sum, chunk) => sum + chunk.length, 0);
+      const combinedArray = new Uint8Array(totalSize);
+      let offset = 0;
+      
+      for (let i = 0; i < file.chunks.length; i++) {
+        const chunk = file.chunks[i];
+        if (chunk) {
+          combinedArray.set(chunk, offset);
+          offset += chunk.length;
+        }
+      }
+
+      // Save the file
+      window.electronAPI.saveReceivedFile(
+        data.fileName,
+        combinedArray,
+        state.saveDirectory
+      ).then(() => {
+        // Update UI to show file complete
+        const fileList = document.getElementById('received-files-list');
+        const fileItem = fileList.querySelector(`[data-file-number="${file.fileNumber}"]`);
+        if (fileItem) {
+          const sizeElement = fileItem.querySelector('.file-size');
+          const statusElement = fileItem.querySelector('.file-status');
+          if (sizeElement) sizeElement.textContent = `${formatFileSize(file.fileSize)} - Saved to ${state.saveDirectory}`;
+          if (statusElement) statusElement.textContent = '✅';
+        }
+        
+        delete incomingFiles[data.fileName];
+        appuiToast.success(`${data.fileName} received successfully!`, 4000);
+        
+        // Check if all files received
+        if (Object.keys(incomingFiles).length === 0) {
+          appuiToast.success('All files received successfully!', 4000);
+        }
+      }).catch((error) => {
+        console.error('Failed to save file:', error);
+        appuiToast.error(`Failed to save ${data.fileName}: ${error.message}`, 5000);
+      });
+    }
+    return;
+  }
 
   if (data.type === 'file-start') {
     const fileList = document.getElementById('received-files-list');
@@ -1290,8 +1555,12 @@ if (buttons.sendFiles) {
       document.querySelectorAll('.file-remove').forEach((el) => (el.style.display = 'none'));
       buttons.sendFiles.disabled = true;
       buttons.sendFiles.textContent = '⏳ Sending...';
-
-      await window.electronAPI.sendFiles(state.selectedFilePaths);
+      console.log('Starting file transfer for:', state.selectedFilePaths);
+      if (state.transferType === 'local') {
+        await window.electronAPI.sendFiles(state.selectedFilePaths);
+      } else if (state.transferType === 'remote' && state.remoteConnection) {
+        sendFilesToRemote(state.selectedFilePaths);
+      }
       console.log('Files sent successfully!');
     } catch (error) {
       console.error('Failed to send files:', error);
@@ -1302,6 +1571,114 @@ if (buttons.sendFiles) {
     }
   });
 }
+
+async function sendFilesToRemote(selectedFilePaths) {
+  if (!state.remoteConnection || state.remoteConnection.open === false) {
+    appuiToast.error('Not connected to sender. Please connect first.', 5000);
+    return;
+  }
+  const CHUNK_SIZE = 64 * 1024;
+
+  for (let fileIndex = 0; fileIndex < selectedFilePaths.length; fileIndex++) {
+    const filePath = selectedFilePaths[fileIndex];
+    const currentFileNumber = fileIndex + 1;
+    let filename = '';
+    
+    try {
+      filename = filePath.split(/[/\\]/).pop();
+      
+      // Get file size first
+      const fileSize = await window.electronAPI.getFileSize(filePath);
+      const totalChunks = Math.ceil(fileSize / CHUNK_SIZE);
+
+      // Send file metadata
+      state.remoteConnection.send({
+        type: 'file-meta',
+        fileName: filename,
+        fileSize: fileSize,
+        totalChunks: totalChunks
+      });
+      
+      console.log(`Sending ${filename}: ${totalChunks} chunks, ${fileSize} bytes`);
+      
+      // Send file chunks by reading stream
+      let offset = 0;
+      let sentBytes = 0;
+      
+      for (let i = 0; i < totalChunks; i++) {
+        // Read chunk from file stream
+        const result = await window.electronAPI.readFileChunk(filePath, offset, CHUNK_SIZE);
+        
+        // Convert chunk to base64 for transmission
+        const base64Chunk = btoa(String.fromCharCode(...new Uint8Array(result.chunk)));
+        
+        state.remoteConnection.send({
+          type: 'file-chunk',
+          fileName: filename,
+          chunkIndex: i,
+          chunk: base64Chunk
+        });
+        
+        sentBytes += result.bytesRead;
+        const progress = Math.round((sentBytes / fileSize) * 100);
+        
+        // Update UI progress every 10 chunks to improve performance
+        if (i % 10 === 0 || i === totalChunks - 1) {
+          updateFileProgress({
+            currentFile: currentFileNumber,
+            fileName: filename,
+            sentBytes: sentBytes,
+            totalBytes: fileSize,
+            progress: progress
+          });
+        }
+        
+        // Log progress less frequently (every 50 chunks)
+        if (i % 50 === 0 || i === totalChunks - 1) {
+          console.log(`Sent chunk ${i + 1}/${totalChunks} for ${filename} (${progress}%)`);
+        }
+        
+        offset += result.bytesRead;
+      }
+      
+      // Send file complete
+      state.remoteConnection.send({
+        type: 'file-complete',
+        fileName: filename,
+        fileSize: fileSize
+      });
+      
+      // Mark file as complete in UI
+      const fileItems = document.querySelectorAll('#file-list .file-item');
+      const currentItem = fileItems[fileIndex];
+      if (currentItem) {
+        const statusElement = currentItem.querySelector('.file-status');
+        if (statusElement) statusElement.textContent = '✅';
+      }
+      
+      console.log(`Finished sending file: ${filename}`);
+      appuiToast.success(`${filename} sent successfully!`, 3000);
+      
+    } catch (error) {
+      console.error(`Error sending file: ${filename}`, error);
+      appuiToast.error(`Failed to send ${filename}: ${error.message}`, 5000);
+    }
+  }
+  
+  // All files sent - match local sender behavior
+  state.isTransferring = false;
+  state.selectedFilePaths = [];
+  
+  if (buttons.sendFiles) {
+    buttons.sendFiles.textContent = '✅ All Files Sent!';
+    setTimeout(() => {
+      buttons.sendFiles.textContent = '🚀 Send Files';
+      buttons.sendFiles.disabled = false;
+    }, 2000);
+  }
+  appuiToast.success('All files sent successfully!', 4000);
+}
+
 
 // ============================================================================
 // PROGRESS AND STATUS UPDATES

@@ -27,6 +27,8 @@ const IPC_CHANNELS = {
   // File system operations
   SELECT_FILES: 'select-files',
 
+  READ_FILE: 'read-file',
+
   // Network
   GET_LOCAL_IP: 'get-local-ip',
   DISCOVER_SERVICES: 'discover-services',
@@ -65,6 +67,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return null;
     }
   },
+
+  // Read file as buffer (for remote transfer)
+  readFileAsBuffer: (filePath: string) =>
+    ipcRenderer.invoke('read-file-as-buffer', filePath),
+
+  // Read file chunk (for streaming remote transfer)
+  readFileChunk: (filePath: string, offset: number, length: number) =>
+    ipcRenderer.invoke('read-file-chunk', filePath, offset, length),
+
+  // Get file size
+  getFileSize: (filePath: string) =>
+    ipcRenderer.invoke('get-file-size', filePath),
+
+  // Save received file (for remote transfer)
+  saveReceivedFile: (fileName: string, buffer: Uint8Array, saveDir?: string) =>
+    ipcRenderer.invoke('save-received-file', fileName, buffer, saveDir),
 
   // Network info
   getLocalIP: () => ipcRenderer.invoke(IPC_CHANNELS.GET_LOCAL_IP),
