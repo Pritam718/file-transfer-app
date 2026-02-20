@@ -1,8 +1,19 @@
 /**
  * Renderer script for file transfer functionality
  * Uses Electron IPC for real file transfer operations
- * Refactored version with no duplicate code
+ * Optimized and cleaned version
  */
+
+// ============================================================================
+// DEBUG & LOGGING
+// ============================================================================
+
+const DEBUG = true; // Set to true for debug logs
+const debug = {
+  log: (...args) => DEBUG && console.log(...args),
+  warn: (...args) => DEBUG && console.warn(...args),
+  error: console.error.bind(console), // Always log errors
+};
 
 // ============================================================================
 // INITIALIZATION & DOM ELEMENTS
@@ -10,7 +21,7 @@
 
 // Check if electronAPI is available
 if (!window.electronAPI) {
-  console.error('Electron API not available!');
+  debug.error('Electron API not available!');
   showAlert({
     title: 'Application Error',
     message: 'Electron API not loaded. Please restart the application.',
@@ -75,11 +86,9 @@ const state = {
 // Load saved path from localStorage
 try {
   const savedPath = localStorage.getItem('lastSavePath');
-  if (savedPath) {
-    state.saveDirectory = savedPath;
-  }
+  if (savedPath) state.saveDirectory = savedPath;
 } catch (e) {
-  console.warn('Could not load saved path:', e);
+  debug.warn('Could not load saved path:', e);
 }
 
 // ============================================================================
@@ -142,7 +151,7 @@ function savePath(path) {
     localStorage.setItem('lastSavePath', path);
     state.saveDirectory = path;
   } catch (e) {
-    console.warn('Could not save path to localStorage:', e);
+    debug.warn('Could not save path to localStorage:', e);
   }
 }
 
@@ -179,27 +188,22 @@ function isValidPort(port) {
 function sendDisconnectNotification(reason = 'User closed the connection') {
   if (state.remoteConnection && state.remoteConnection.open) {
     try {
-      console.log('Sending disconnect notification:', reason);
+      debug.log('Sending disconnect notification:', reason);
       state.remoteConnection.send({
         type: 'disconnect-request',
-        reason: reason,
+        reason,
         mode: state.currentMode,
         timestamp: Date.now(),
       });
     } catch (error) {
-      console.error('Failed to send disconnect notification:', error);
+      debug.error('Failed to send disconnect notification:', error);
     }
   }
 }
 
 async function cleanupConnection() {
   try {
-    console.log(
-      'Cleaning up connection for mode:',
-      state.currentMode,
-      'transferType:',
-      state.transferType
-    );
+    debug.log('Cleanup:', state.currentMode, state.transferType);
 
     // Send disconnect notification for remote connections before closing
     if (state.transferType === 'remote' && state.remoteConnection) {
@@ -212,21 +216,17 @@ async function cleanupConnection() {
     if (state.remoteConnection) {
       state.remoteConnection.close();
       state.remoteConnection = null;
-      console.log('Remote connection closed');
     }
     if (state.remotePeer) {
       state.remotePeer.destroy();
       state.remotePeer = null;
-      console.log('Remote peer destroyed');
     }
 
     // Cleanup backend connections
     if (state.currentMode === 'sender') {
       await window.electronAPI.stopSender(state.transferType);
-      console.log('Sender stopped');
     } else if (state.currentMode === 'receiver') {
       await window.electronAPI.disconnectReceiver();
-      console.log('Receiver disconnected');
     }
 
     // Reset state (but keep cached save path)
@@ -235,12 +235,11 @@ async function cleanupConnection() {
     state.selectedFilePaths = [];
     state.transferType = null;
   } catch (error) {
-    console.error('Error during cleanup:', error);
+    debug.error('Error during cleanup:', error);
   }
 }
 
 function resetConnectionUI(mode) {
-  console.log('Resetting UI for mode:', mode);
   state.isTransferring = false;
 
   if (mode === 'sender') {
@@ -346,7 +345,7 @@ function setupPeerEventHandlers(peer, { onOpen, onError, onDisconnected }) {
 // ============================================================================
 
 window.electronAPI.onConnectionStatus((status) => {
-  console.log('Connection status:', status);
+  debug.log('Connection status:', status);
   state.isConnected = status.connected;
   state.currentMode = status.mode;
 
@@ -365,8 +364,6 @@ window.electronAPI.onConnectionStatus((status) => {
     if (savePathDisplay) {
       savePathDisplay.textContent = state.saveDirectory || 'Downloads folder';
     }
-
-    console.log('Connected to sender, ready to receive files');
   } else if (!status.connected && status.mode === 'receiver') {
     updateUIElement('receiver-setup', 'display', 'block');
     updateUIElement('receiver-transfer', 'display', 'none');
@@ -374,7 +371,7 @@ window.electronAPI.onConnectionStatus((status) => {
 });
 
 window.electronAPI.onConnectionLost((info) => {
-  console.error('Connection lost:', info);
+  debug.error('Connection lost:', info);
   state.isConnected = false;
 
   setTimeout(() => {
@@ -413,8 +410,6 @@ window.electronAPI.onConnectionLost((info) => {
 });
 
 window.electronAPI.onFileProgress((progress) => {
-  console.log('File progress:', progress);
-  
   // Add speed tracking for local transfers
   if (state.transferType === 'local') {
     const fileKey = `${progress.currentFile}_${progress.fileName}`;
@@ -449,12 +444,10 @@ window.electronAPI.onFileProgress((progress) => {
 });
 
 window.electronAPI.onFileReceived((file) => {
-  console.log('File received:', file);
   updateReceivedFileComplete(file);
 });
 
 window.electronAPI.onTransferComplete(() => {
-  console.log('Transfer complete!');
   state.isTransferring = false;
 
   if (buttons.sendFiles) {
@@ -468,7 +461,7 @@ window.electronAPI.onTransferComplete(() => {
 });
 
 window.electronAPI.onError((error) => {
-  console.error('Transfer error:', error);
+  debug.error('Transfer error:', error);
 
   const errorMessages = {
     ECONNREFUSED:
@@ -556,7 +549,6 @@ buttons.senderMode.addEventListener('click', async () => {
   try {
     modals.mode.style.display = 'none';
     state.currentMode = 'sender';
-    console.log('Selected transfer type:', state.transferType);
 
     const senderFunctions = {
       local: localSender,
@@ -569,7 +561,7 @@ buttons.senderMode.addEventListener('click', async () => {
       await senderFn();
     }
   } catch (error) {
-    console.error('Failed to start sender:', error);
+    debug.error('Failed to start sender:', error);
     appuiToast.error('Failed to start sender mode: ' + error.message, 5000);
     modals.sender.style.display = 'none';
     state.currentMode = null;
@@ -577,8 +569,6 @@ buttons.senderMode.addEventListener('click', async () => {
 });
 
 async function localSender() {
-  console.log('Starting LOCAL sender mode');
-
   // Reset state from any previous connection
   state.isConnected = false;
   state.isTransferring = false;
@@ -609,10 +599,8 @@ async function localSender() {
 }
 
 async function remoteSender() {
-  console.log('Starting REMOTE sender mode');
-
   try {
-    // Reset state from any previous connection
+    // Reset state
     state.isConnected = false;
     state.isTransferring = false;
     state.selectedFilePaths = [];
@@ -637,7 +625,7 @@ async function remoteSender() {
 
     setupPeerEventHandlers(state.remotePeer, {
       onOpen: (id) => {
-        console.log('PeerJS connected! Peer ID:', id);
+        debug.log('PeerJS connected:', id);
         updateUIElement('service-name', 'text', 'Remote Transfer (Internet)');
         updateUIElement('connection-code', 'text', id);
         updateUIElement('sender-ip', 'text', 'N/A (P2P)');
@@ -646,7 +634,7 @@ async function remoteSender() {
         appuiToast.success('Remote sender ready! Share the code with receiver.', 3000);
       },
       onError: (err) => {
-        console.error('PeerJS error:', err);
+        debug.error('PeerJS error:', err);
         appuiToast.error('PeerJS error: ' + err.message, 5000);
         modals.sender.style.display = 'none';
         state.currentMode = null;
@@ -656,14 +644,14 @@ async function remoteSender() {
         }
       },
       onDisconnected: () => {
-        console.warn('Disconnected from PeerJS server, attempting to reconnect...');
+        debug.warn('Disconnected from PeerJS server, attempting to reconnect...');
         appuiToast.warn('Connection lost, reconnecting...', 3000);
         state.remotePeer.reconnect();
       },
     });
 
     state.remotePeer.on('connection', async (conn) => {
-      console.log('Receiver connected via PeerJS:', conn.peer);
+      debug.log('Receiver connected:', conn.peer);
       state.remoteConnection = conn;
       state.isConnected = true;
 
@@ -673,11 +661,9 @@ async function remoteSender() {
       if (buttons.sendFiles) buttons.sendFiles.style.display = 'block';
 
       conn.on('data', (data) => {
-        console.log('Received data from receiver:', data);
-
         // Handle disconnect notification from receiver
         if (data && data.type === 'disconnect-request') {
-          console.log('Receiver requested disconnect:', data.reason);
+          debug.log('Receiver disconnecting:', data.reason);
           state.isConnected = false;
 
           appuiToast.warn('Receiver is disconnecting...', 3000);
@@ -696,7 +682,6 @@ async function remoteSender() {
       });
 
       conn.on('close', () => {
-        console.log('Receiver connection closed');
         if (state.isConnected) {
           // Only show alert if we haven't already been notified via disconnect-request
           state.isConnected = false;
@@ -713,14 +698,14 @@ async function remoteSender() {
       });
 
       conn.on('error', (err) => {
-        console.error('Connection error:', err);
+        debug.error('Connection error:', err);
         appuiToast.error('Connection error: ' + err.message, 5000);
       });
 
       await window.electronAPI.startSender(state.transferType);
     });
   } catch (error) {
-    console.error('Failed to start remote sender:', error);
+    debug.error('Failed to start remote sender:', error);
     appuiToast.error('Failed to start remote sender: ' + error.message, 5000);
     modals.sender.style.display = 'none';
     state.currentMode = null;
@@ -728,7 +713,7 @@ async function remoteSender() {
 }
 
 async function secureSender() {
-  console.log('Starting SECURE sender mode');
+  appuiToast.info('Secure transfer coming soon!', 3000);
   appuiAlert.show({
     title: '🔐 Secure Transfer',
     message:
@@ -770,15 +755,13 @@ buttons.receiverMode.addEventListener('click', async () => {
     }
   } catch (error) {
     state.currentMode = null;
-    console.error('Failed to start receiver:', error);
+    debug.error('Failed to start receiver:', error);
     appuiToast.error('Failed to start receiver mode: ' + error.message, 5000);
   }
 });
 
 async function localReceiver() {
-  console.log('Starting LOCAL receiver mode');
-
-  // Reset state from any previous connection
+  // Reset state
   state.isConnected = false;
   state.isTransferring = false;
   state.selectedSender = null;
@@ -826,10 +809,8 @@ async function localReceiver() {
 }
 
 async function remoteReceiver() {
-  console.log('Starting REMOTE receiver mode');
-
   try {
-    // Reset state from any previous connection
+    // Reset state
     state.isConnected = false;
     state.isTransferring = false;
     state.selectedSender = null;
@@ -869,11 +850,11 @@ async function remoteReceiver() {
 
     setupPeerEventHandlers(state.remotePeer, {
       onOpen: (id) => {
-        console.log('PeerJS receiver ready! Peer ID:', id);
+        debug.log('PeerJS receiver ready:', id);
         appuiToast.success('Ready to connect to sender!', 3000);
       },
       onError: (err) => {
-        console.error('PeerJS error:', err);
+        debug.error('PeerJS error:', err);
         appuiToast.error('PeerJS error: ' + err.message, 5000);
         modals.receiver.style.display = 'none';
         state.currentMode = null;
@@ -887,13 +868,13 @@ async function remoteReceiver() {
         }
       },
       onDisconnected: () => {
-        console.warn('Disconnected from PeerJS server, attempting to reconnect...');
+        debug.warn('Disconnected from PeerJS server, attempting to reconnect...');
         appuiToast.warn('Connection lost, reconnecting...', 3000);
         state.remotePeer.reconnect();
       },
     });
   } catch (error) {
-    console.error('Failed to start remote receiver:', error);
+    debug.error('Failed to start remote receiver:', error);
     appuiToast.error('Failed to start remote receiver: ' + error.message, 5000);
     modals.receiver.style.display = 'none';
     state.currentMode = null;
@@ -901,7 +882,7 @@ async function remoteReceiver() {
 }
 
 async function secureReceiver() {
-  console.log('Starting SECURE receiver mode');
+  appuiToast.info('Secure transfer coming soon!', 3000);
   appuiAlert.show({
     title: '🔐 Secure Transfer',
     message:
@@ -921,12 +902,8 @@ async function discoverAvailableSenders() {
     updateUIElement('receiver-code-entry', 'display', 'none');
     updateUIElement('auto-discovery-section', 'display', 'block');
 
-    console.log('Scanning for senders...');
-
     const services = await window.electronAPI.discoverServices();
     state.discoveredSenders = services;
-
-    console.log('Found senders:', services);
 
     updateUIElement('receiver-scanning', 'display', 'none');
     updateUIElement('receiver-setup', 'display', 'block');
@@ -954,7 +931,7 @@ async function discoverAvailableSenders() {
       });
     }
   } catch (error) {
-    console.error('Failed to discover senders:', error);
+    debug.error('Failed to discover senders:', error);
     updateUIElement('receiver-scanning', 'display', 'none');
     updateUIElement('receiver-setup', 'display', 'block');
 
@@ -976,7 +953,7 @@ async function discoverAvailableSenders() {
 
 function selectSender(index) {
   state.selectedSender = state.discoveredSenders[index];
-  console.log('Selected sender:', state.selectedSender);
+  debug.log('Selected sender:', state.selectedSender);
 
   updateUIElement('receiver-setup', 'display', 'none');
   updateUIElement('receiver-code-entry', 'display', 'block');
@@ -1028,11 +1005,10 @@ async function handleRemoteConnection() {
     buttons.connect.textContent = '⏳ Connecting...';
     buttons.connect.disabled = true;
 
-    console.log('Connecting to sender peer:', peerID);
+    debug.log('Connecting to sender peer:', peerID);
     state.remoteConnection = state.remotePeer.connect(peerID, { reliable: true });
 
     state.remoteConnection.on('open', () => {
-      console.log('Connected to sender via PeerJS!');
       state.isConnected = true;
 
       updateUIElement('receiver-code-entry', 'display', 'none');
@@ -1056,7 +1032,6 @@ async function handleRemoteConnection() {
     state.remoteConnection.on('data', handleRemoteData);
 
     state.remoteConnection.on('close', () => {
-      console.log('Sender connection closed');
       if (state.isConnected) {
         // Only show alert if we haven't already been notified via disconnect-request
         state.isConnected = false;
@@ -1073,13 +1048,13 @@ async function handleRemoteConnection() {
     });
 
     state.remoteConnection.on('error', (err) => {
-      console.error('Connection error:', err);
+      debug.error('Connection error:', err);
       appuiToast.error('Connection error: ' + err.message, 5000);
       buttons.connect.textContent = '🔗 Connect to Sender';
       buttons.connect.disabled = false;
     });
   } catch (error) {
-    console.error('Failed to connect:', error);
+    debug.error('Failed to connect:', error);
     appuiToast.error('Failed to connect: ' + error.message, 5000);
     buttons.connect.textContent = '🔗 Connect to Sender';
     buttons.connect.disabled = false;
@@ -1118,12 +1093,12 @@ async function handleLocalConnection() {
     buttons.connect.textContent = '⏳ Connecting...';
     buttons.connect.disabled = true;
 
-    // Log the Bonjour/mDNS discovered IP address
-    console.log('Connecting to sender via Bonjour discovery:');
-    console.log('  IP Address:', state.selectedSender.host);
-    console.log('  Port:', state.selectedSender.port);
-    console.log('  Sender Name:', state.selectedSender.name);
-    console.log('  All Addresses:', state.selectedSender.addresses);
+    // Log discovered connection details
+    debug.log('Connecting via Bonjour:', {
+      ip: state.selectedSender.host,
+      port: state.selectedSender.port,
+      name: state.selectedSender.name,
+    });
 
     const result = await window.electronAPI.connectToSender(
       state.selectedSender.host,
@@ -1135,10 +1110,8 @@ async function handleLocalConnection() {
     if (result && result.saveDir) {
       savePath(result.saveDir);
     }
-
-    console.log('Authentication successful, waiting for files...');
   } catch (error) {
-    console.error('Connection failed:', error);
+    debug.error('Connection failed:', error);
 
     let errorMsg = error.message;
     if (errorMsg.includes('Invalid connection code')) {
@@ -1185,11 +1158,11 @@ async function processWriteQueue(queueKey, actualFileName, originalFileName, tra
             transferId: transferId,
             receivedChunks: receivedChunks,
           });
-          console.log(`ACK sent for ${originalFileName || fileName} (${transferId}): ${receivedChunks} chunks`);
+          debug.log(`ACK sent for ${originalFileName || fileName} (${transferId}): ${receivedChunks} chunks`);
         }
       }
     } catch (error) {
-      console.error(`Failed to write chunk for ${fileName}:`, error);
+      debug.error(`Failed to write chunk for ${fileName}:`, error);
       appuiToast.error(`Error writing ${fileName}: ${error.message}`, 5000);
       // Continue processing remaining items even if one fails
     }
@@ -1199,11 +1172,9 @@ async function processWriteQueue(queueKey, actualFileName, originalFileName, tra
 }
 
 async function handleRemoteData(data) {
-  console.log('Received data from sender:', data);
-
   // Handle disconnect notification from sender
   if (data.type === 'disconnect-request') {
-    console.log('Sender requested disconnect:', data.reason);
+    debug.log('Sender disconnecting:', data.reason);
     state.isConnected = false;
 
     appuiToast.warn('Sender is disconnecting...', 3000);
@@ -1249,11 +1220,11 @@ async function handleRemoteData(data) {
     window.electronAPI
       .initFileStream(data.fileName, state.saveDirectory)
       .then((result) => {
-        console.log(`File stream initialized for ${data.fileName} (ID: ${transferId})`);
+        debug.log(`Stream init: ${data.fileName} (${transferId})`);
         
         // If backend renamed the file, store the actual name
         if (result.fileName && result.fileName !== data.fileName) {
-          console.log(`File renamed: ${data.fileName} -> ${result.fileName}`);
+          debug.log(`Renamed: ${data.fileName} -> ${result.fileName}`);
           // Store the actual file name being saved
           incomingFiles[transferId].actualFileName = result.fileName;
           // originalFileName remains as sender's name
@@ -1266,27 +1237,17 @@ async function handleRemoteData(data) {
         };
       })
       .catch((error) => {
-        console.error(`Failed to initialize file stream: ${error.message}`);
+        debug.error(`Failed to initialize file stream: ${error.message}`);
         appuiToast.error(`Failed to start receiving ${data.fileName}`, 5000);
       });
 
-    // Create file item in UI
-    const fileList = document.getElementById('received-files-list');
-    const fileItem = document.createElement('div');
-    fileItem.className = 'file-item';
-    fileItem.dataset.fileNumber = fileCount;
-    fileItem.dataset.fileName = data.fileName;
-    fileItem.innerHTML = `
-      <span class="file-icon">📄</span>
-      <div class="file-info">
-        <div class="file-name">${data.fileName}</div>
-        <div class="file-size">0 Bytes / ${formatFileSize(data.fileSize)} (0%)</div>
-      </div>
-      <span class="file-status">⬇️</span>
-    `;
-    fileList.appendChild(fileItem);
+    // Create file item in UI using generalized function (same as local)
+    ensureReceiverFileItem({
+      currentFile: fileCount,
+      fileName: data.fileName
+    });
 
-    console.log(`Receiving ${data.fileName}: 0/${data.totalChunks} chunks (streaming mode)`);
+    debug.log(`[REMOTE] Receiving ${data.fileName}: 0/${data.totalChunks} chunks`);
     return;
   }
 
@@ -1323,7 +1284,7 @@ async function handleRemoteData(data) {
       // Flush buffer more frequently (1MB) to prevent memory issues
       const shouldFlush = file.bufferedBytes >= 1024 * 1024 || file.receivedChunks === file.totalChunks;
 
-      // CRITICAL: Send ACK immediately to prevent sender timeout (do NOT wait for disk write)
+      // CRITICAL: Send ACK immediately to prevent sender timeout
       if (shouldSendAck) {
         if (state.remoteConnection && state.remoteConnection.open) {
           state.remoteConnection.send({
@@ -1332,7 +1293,7 @@ async function handleRemoteData(data) {
             transferId: file.transferId,
             receivedChunks: file.receivedChunks,
           });
-          console.log(`ACK sent for ${file.originalFileName} (${file.transferId}): ${file.receivedChunks} chunks`);
+          debug.log(`ACK: ${file.receivedChunks}/${file.transferId}`);
         }
       }
 
@@ -1396,7 +1357,7 @@ async function handleRemoteData(data) {
     if (file) {
       const actualFileName = file.actualFileName || file.originalFileName;
       
-      console.log(`[FILE-COMPLETE] Received for ${file.originalFileName} (${transferId})`);
+      debug.log(`[COMPLETE] ${file.originalFileName} (${transferId})`);
       
       // Force final progress update to 100%
       updateFileProgress({
@@ -1411,7 +1372,7 @@ async function handleRemoteData(data) {
       // Wait for write queue to finish processing (use transferId as key) with timeout
       const queue = fileWriteQueues[transferId];
       if (queue) {
-        console.log(`[FILE-COMPLETE] Waiting for write queue to finish for ${file.originalFileName}`);
+        debug.log(`[COMPLETE] Waiting for queue: ${file.originalFileName}`);
         let waitCount = 0;
         const maxWait = 200; // 10 seconds max wait (200 * 50ms)
         while ((queue.items.length > 0 || queue.isProcessing) && waitCount < maxWait) {
@@ -1419,42 +1380,26 @@ async function handleRemoteData(data) {
           waitCount++;
         }
         if (waitCount >= maxWait) {
-          console.warn(`[FILE-COMPLETE] Timeout waiting for write queue for ${file.originalFileName}`);
-        } else {
-          console.log(`[FILE-COMPLETE] Write queue finished for ${file.originalFileName}`);
+          debug.warn(`[COMPLETE] Queue timeout: ${file.originalFileName}`);
         }
       }
       
       // Finalize the file stream (already saved incrementally to disk)
-      console.log(`[FILE-COMPLETE] Finalizing file: ${actualFileName}`);
+      debug.log(`[COMPLETE] Finalizing: ${actualFileName}`);
       window.electronAPI
         .finalizeFile(actualFileName, state.saveDirectory)
         .then((result) => {
-          console.log(`[FILE-COMPLETE] Finalized successfully: ${actualFileName}`, result);
-          // Update UI to show file complete
-          const fileList = document.getElementById('received-files-list');
-          const fileItem = fileList.querySelector(`[data-file-number="${file.fileNumber}"]`);
-          if (fileItem) {
-            const sizeElement = fileItem.querySelector('.file-size');
-            const statusElement = fileItem.querySelector('.file-status');
-            const fileNameElement = fileItem.querySelector('.file-name');
-            if (sizeElement) {
-              const savePath = result.path || state.saveDirectory || 'Downloads folder';
-              sizeElement.textContent = `${formatFileSize(file.fileSize)} - Saved to ${savePath}`;
-              console.log(`[FILE-COMPLETE] UI updated with path: ${savePath}`);
-            }
-            if (statusElement) {
-              statusElement.textContent = '✅';
-              console.log(`[FILE-COMPLETE] Status updated to ✅`);
-            }
-            // Update displayed file name if it was renamed
-            if (fileNameElement && actualFileName !== file.originalFileName) {
-              fileNameElement.textContent = actualFileName;
-              fileNameElement.title = `Original: ${file.originalFileName}`;
-            }
-          } else {
-            console.error(`[FILE-COMPLETE] Could not find file item for file number ${file.fileNumber}`);
-          }
+          debug.log(`[COMPLETE] Success: ${actualFileName}`);
+          
+          // Update UI using generalized function (same as local transfers)
+          finalizeReceivedFileUI({
+            fileNumber: file.fileNumber,
+            fileName: file.originalFileName,
+            originalFileName: file.originalFileName,
+            actualFileName: actualFileName,
+            fileSize: file.fileSize,
+            savePath: result.path || state.saveDirectory
+          });
 
           // Clean up tracking objects and free memory
           if (file.bufferQueue) {
@@ -1471,10 +1416,6 @@ async function handleRemoteData(data) {
               // Ignore if gc not available
             }
           }
-          
-          const displayName = actualFileName !== file.originalFileName ? 
-            `${actualFileName} (renamed from ${file.originalFileName})` : actualFileName;
-          appuiToast.success(`${displayName} received successfully!`, 4000);
 
           // Check if all files received
           if (Object.keys(incomingFiles).length === 0) {
@@ -1482,10 +1423,10 @@ async function handleRemoteData(data) {
           }
         })
         .catch((error) => {
-          console.error(`[FILE-COMPLETE] Failed to finalize file ${file.originalFileName}:`, error);
+          debug.error(`[COMPLETE] Failed to finalize ${file.originalFileName}:`, error);
           appuiToast.error(`Failed to save ${file.originalFileName}: ${error.message}`, 5000);
           
-          // Still update UI to show there was an issue but file transfer completed
+          // Update UI to show error (same format as success, but with error indicator)
           const fileList = document.getElementById('received-files-list');
           const fileItem = fileList.querySelector(`[data-file-number="${file.fileNumber}"]`);
           if (fileItem) {
@@ -1498,7 +1439,7 @@ async function handleRemoteData(data) {
           }
         });
     } else {
-      console.error(`[FILE-COMPLETE] File not found in tracking: ${transferId}`);
+      debug.error(`[COMPLETE] File not found: ${transferId}`);
     }
     return;
   }
@@ -1509,15 +1450,11 @@ async function handleRemoteData(data) {
 // ============================================================================
 
 if (buttons.refreshSenders) {
-  buttons.refreshSenders.addEventListener('click', async () => {
-    console.log('Refreshing sender list...');
-    await discoverAvailableSenders();
-  });
+  buttons.refreshSenders.addEventListener('click', () => discoverAvailableSenders());
 }
 
 if (buttons.backToList) {
   buttons.backToList.addEventListener('click', () => {
-    console.log('Going back to sender list...');
     state.selectedSender = null;
     updateUIElement('receiver-code-entry', 'display', 'none');
     updateUIElement('receiver-setup', 'display', 'block');
@@ -1609,7 +1546,7 @@ if (buttons.manualProceed) {
       manual: true,
     };
 
-    console.log('Manual sender configured:', state.selectedSender);
+    debug.log('Manual sender:', state.selectedSender);
 
     updateUIElement('receiver-setup', 'display', 'none');
     updateUIElement('receiver-code-entry', 'display', 'block');
@@ -1647,7 +1584,7 @@ if (buttons.browseFolder) {
         savePath(result.folderPath);
       }
     } catch (error) {
-      console.error('Failed to select folder:', error);
+      debug.error('Failed to select folder:', error);
       appuiToast.error('Failed to select folder: ' + error.message, 5000);
     }
   });
@@ -1683,11 +1620,9 @@ inputs.fileDropZone.addEventListener('click', async () => {
         buttons.sendFiles.textContent = '🚀 Send Files';
         buttons.sendFiles.style.display = 'block';
       }
-
-      console.log(`Selected ${state.selectedFilePaths.length} file(s)`);
     }
   } catch (error) {
-    console.error('Failed to select files:', error);
+    debug.error('Failed to select files:', error);
     appuiToast.error('Failed to select files: ' + error.message, 5000);
   }
 });
@@ -1736,12 +1671,12 @@ inputs.fileDropZone.addEventListener('drop', async (e) => {
       }
 
       displaySelectedFiles(state.selectedFilePaths);
-      console.log(`Dropped ${filePaths.length} file(s)`);
+      debug.log(`Dropped ${filePaths.length} file(s)`);
     } else {
       appuiToast.error('Could not get file paths. Please use the "Browse" button instead.', 5000);
     }
   } catch (error) {
-    console.error('Error handling dropped files:', error);
+    debug.error('Error handling dropped files:', error);
     appuiToast.error('Failed to process dropped files: ' + error.message, 5000);
   }
 });
@@ -1781,9 +1716,6 @@ document.getElementById('file-list').addEventListener('click', (e) => {
     const fileIndex = parseInt(e.target.dataset.fileIndex, 10);
     state.selectedFilePaths.splice(fileIndex, 1);
     displaySelectedFiles(state.selectedFilePaths);
-    console.log(
-      `Removed file at index ${fileIndex}, ${state.selectedFilePaths.length} files remaining`
-    );
   }
 });
 
@@ -1800,7 +1732,7 @@ if (buttons.sendFiles) {
       document.querySelectorAll('.file-remove').forEach((el) => (el.style.display = 'none'));
       buttons.sendFiles.disabled = true;
       buttons.sendFiles.textContent = '⏳ Sending...';
-      console.log('Starting file transfer for:', state.selectedFilePaths);
+      
       if (state.transferType === 'local') {
         // Reset local transfer state for new transfer
         state.localTransferState = {};
@@ -1808,9 +1740,8 @@ if (buttons.sendFiles) {
       } else if (state.transferType === 'remote' && state.remoteConnection) {
         await sendFilesToRemote(state.selectedFilePaths);
       }
-      console.log('Files sent successfully!');
     } catch (error) {
-      console.error('Failed to send files:', error);
+      debug.error('Failed to send files:', error);
       appuiToast.error('Failed to send files: ' + error.message, 5000);
       buttons.sendFiles.textContent = '🚀 Send Files';
       buttons.sendFiles.disabled = false;
@@ -1858,7 +1789,7 @@ async function sendFilesToRemote(selectedFilePaths) {
         totalChunks: totalChunks,
       });
 
-      console.log(`Sending ${filename} (ID: ${transferId}): ${totalChunks} chunks, ${fileSize} bytes`);
+      debug.log(`Sending ${filename} (${transferId}): ${totalChunks} chunks`);
 
       // Initialize flow control for this file using transfer ID
       sendingFiles[transferId] = {
@@ -1876,7 +1807,7 @@ async function sendFilesToRemote(selectedFilePaths) {
           if (data.type === 'chunk-ack') {
             const file = sendingFiles[data.transferId];
             if (file) {
-              console.log(`ACK received for ${data.transferId}: ${data.receivedChunks} chunks`);
+              debug.log(`ACK: ${data.receivedChunks}/${data.transferId}`);
               file.acknowledgedChunks = data.receivedChunks;
               if (file.ackResolve) {
                 file.ackResolve();
@@ -1906,7 +1837,7 @@ async function sendFilesToRemote(selectedFilePaths) {
           }
           
           if (waitCount >= 500) {
-            console.warn(`Timeout waiting for ACK at chunk ${i}. Expected: ${minRequiredAck}, Got: ${file.acknowledgedChunks}`);
+            debug.warn(`ACK timeout at chunk ${i}: Expected ${minRequiredAck}, Got ${file.acknowledgedChunks}`);
           }
         }
 
@@ -1960,9 +1891,7 @@ async function sendFilesToRemote(selectedFilePaths) {
       }
       
       if (finalWaitCount >= 300) {
-        console.warn(`Final ACK timeout for ${filename} (ID: ${transferId}), received ${sendingFiles[transferId].acknowledgedChunks}/${finalTarget}`);
-      } else {
-        console.log(`All chunks acknowledged for ${filename} (ID: ${transferId})`);
+        debug.warn(`Final ACK timeout: ${filename}, received ${sendingFiles[transferId].acknowledgedChunks}/${finalTarget}`);
       }
 
       // Send file complete with transferId
@@ -1984,11 +1913,11 @@ async function sendFilesToRemote(selectedFilePaths) {
         if (statusElement) statusElement.textContent = '✅';
       }
 
-      console.log(`Finished sending file: ${filename}`);
+      debug.log(`Finished sending file: ${filename}`);
       appuiToast.success(`${filename} sent successfully!`, 3000);
       successCount++;
     } catch (error) {
-      console.error(`Error sending file: ${filename}`, error);
+      debug.error(`Error sending file: ${filename}`, error);
       appuiToast.error(`Failed to send ${filename}: ${error.message}`, 5000);
       failCount++;
 
@@ -2066,10 +1995,18 @@ function updateFileProgress(progress) {
       statusElement.textContent = state.currentMode === 'sender' ? '⬆️' : '⬇️';
     }
   } else {
-    console.warn(`[UPDATE] Could not find file item for file ${progress.currentFile}`);
+    debug.warn(`[UPDATE] File item not found: ${progress.currentFile}`);
   }
 }
 
+// ============================================================================
+// FILE PROGRESS & COMPLETION FUNCTIONS (GENERALIZED FOR LOCAL & REMOTE)
+// ============================================================================
+
+/**
+ * Generalized function to create or ensure a file item exists in the receiver UI
+ * Works for both local and remote transfers
+ */
 function ensureReceiverFileItem(progress) {
   const fileList = document.getElementById('received-files-list');
   let existingItem = fileList.querySelector(
@@ -2090,33 +2027,77 @@ function ensureReceiverFileItem(progress) {
       <span class="file-status">⬇️</span>
     `;
     fileList.appendChild(fileItem);
-    console.log(
-      `[RECEIVER] Created file item for file ${progress.currentFile}: ${progress.fileName}`
-    );
+    debug.log(`[RECEIVER] Created file item: ${progress.currentFile} - ${progress.fileName}`);
   } else {
     const fileNameElement = existingItem.querySelector('.file-name');
     if (fileNameElement && fileNameElement.textContent !== progress.fileName) {
       fileNameElement.textContent = progress.fileName;
       existingItem.dataset.fileName = progress.fileName;
-      console.log(`[RECEIVER] Updated file item ${progress.currentFile}: ${progress.fileName}`);
+      debug.log(`[RECEIVER] Updated file item: ${progress.currentFile}`);
     }
   }
 }
 
-function updateReceivedFileComplete(file) {
+/**
+ * Generalized function to mark a received file as complete
+ * Works for both local and remote transfers
+ */
+function finalizeReceivedFileUI(fileData) {
+  const { 
+    fileNumber, 
+    fileName, 
+    originalFileName = fileName,
+    actualFileName = fileName,
+    fileSize, 
+    savePath 
+  } = fileData;
+  
+  debug.log(`[FINALIZE] ${fileNumber}: ${fileName}`);
+  
   const fileList = document.getElementById('received-files-list');
-  const fileItem = fileList.querySelector(`.file-item[data-file-number="${file.currentFile}"]`);
+  const fileItem = fileList.querySelector(`.file-item[data-file-number="${fileNumber}"]`);
 
   if (fileItem) {
     const sizeElement = fileItem.querySelector('.file-size');
     const statusElement = fileItem.querySelector('.file-status');
-
-    sizeElement.textContent = `${formatFileSize(file.fileSize)} - Saved to ${file.savePath}`;
-    statusElement.textContent = '✅';
-    console.log(`[RECEIVER] File ${file.currentFile} marked as complete: ${file.fileName}`);
+    const fileNameElement = fileItem.querySelector('.file-name');
+    
+    // Update file size and save path
+    if (sizeElement) {
+      const displayPath = savePath || state.saveDirectory || 'Downloads folder';
+      sizeElement.textContent = `${formatFileSize(fileSize)} - Saved to ${displayPath}`;
+    }
+    
+    // Update status icon to complete
+    if (statusElement) {
+      statusElement.textContent = '✅';
+    }
+    
+    // Update displayed file name if it was renamed
+    if (fileNameElement && actualFileName !== originalFileName) {
+      fileNameElement.textContent = actualFileName;
+      fileNameElement.title = `Original: ${originalFileName}`;
+    }
+    
+    // Show success toast
+    const displayName = actualFileName !== originalFileName ? 
+      `${actualFileName} (renamed from ${originalFileName})` : actualFileName;
+    appuiToast.success(`${displayName} received successfully!`, 4000);
+    
   } else {
-    console.warn(`[RECEIVER] Could not find file item ${file.currentFile} to mark complete`);
+    debug.error(`[FINALIZE] File item not found: ${fileNumber}`);
   }
+}
+
+// Legacy function for backward compatibility (local transfers)
+function updateReceivedFileComplete(file) {
+  debug.log(`[LOCAL] Received complete:`, file);
+  finalizeReceivedFileUI({
+    fileNumber: file.currentFile,
+    fileName: file.fileName,
+    fileSize: file.fileSize,
+    savePath: file.savePath
+  });
 }
 
 // Copy to clipboard
@@ -2255,4 +2236,4 @@ const appuiToast = (() => {
   };
 })();
 
-console.log('File Transfer App initialized (Refactored version)');
+debug.log('File Transfer App initialized ✅');
