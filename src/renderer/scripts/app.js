@@ -69,6 +69,7 @@ const state = {
   remoteConnection: null,
   discoveredSenders: [],
   selectedSender: null,
+  localTransferState: {}, // Track timing for local transfers
 };
 
 // Load saved path from localStorage
@@ -120,6 +121,20 @@ function base64ToArrayBuffer(base64) {
     bytes[i] = binaryString.charCodeAt(i);
   }
   return bytes;
+}
+
+/**
+ * Merge multiple Uint8Array buffers into a single buffer
+ */
+function mergeBuffers(buffers) {
+  const totalLength = buffers.reduce((sum, buf) => sum + buf.length, 0);
+  const result = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const buf of buffers) {
+    result.set(buf, offset);
+    offset += buf.length;
+  }
+  return result;
 }
 
 function savePath(path) {
@@ -399,6 +414,34 @@ window.electronAPI.onConnectionLost((info) => {
 
 window.electronAPI.onFileProgress((progress) => {
   console.log('File progress:', progress);
+  
+  // Add speed tracking for local transfers
+  if (state.transferType === 'local') {
+    const fileKey = `${progress.currentFile}_${progress.fileName}`;
+    
+    // Initialize timing for this file if not exists
+    if (!state.localTransferState[fileKey]) {
+      state.localTransferState[fileKey] = {
+        startTime: Date.now(),
+        lastUpdateTime: Date.now(),
+      };
+    }
+    
+    const fileState = state.localTransferState[fileKey];
+    const now = Date.now();
+    const elapsed = (now - fileState.startTime) / 1000; // seconds
+    const bytes = progress.sentBytes || progress.receivedBytes || 0;
+    const speed = elapsed > 0 ? bytes / elapsed : 0;
+    
+    // Add speed to progress object
+    progress.speed = speed;
+    
+    // Clean up completed files
+    if (progress.progress === 100) {
+      delete state.localTransferState[fileKey];
+    }
+  }
+  
   if (state.currentMode === 'receiver') {
     ensureReceiverFileItem(progress);
   }
@@ -577,6 +620,11 @@ async function remoteSender() {
     state.remotePeer = initializePeerJS();
 
     modals.sender.style.display = 'block';
+    
+    // Hide manual connection details by default for remote mode
+    if (buttons.toggleManualDetails) buttons.toggleManualDetails.style.display = 'none';
+    updateUIElement('manual-connection-details', 'display', 'none');
+    
     updateUIElement('sender-setup', 'display', 'block');
     updateUIElement('sender-transfer', 'display', 'none');
     document.getElementById('file-list').innerHTML = '';
@@ -734,6 +782,7 @@ async function localReceiver() {
   state.isConnected = false;
   state.isTransferring = false;
   state.selectedSender = null;
+  receiverFileCounter = 0; // Reset file counter for new session
 
   modals.receiver.style.display = 'block';
 
@@ -784,6 +833,7 @@ async function remoteReceiver() {
     state.isConnected = false;
     state.isTransferring = false;
     state.selectedSender = null;
+    receiverFileCounter = 0; // Reset file counter for new session
 
     state.remotePeer = initializePeerJS();
 
@@ -1108,8 +1158,47 @@ async function handleLocalConnection() {
 
 // Track incoming files for remote transfer
 const incomingFiles = {};
+const fileWriteQueues = {}; // Queue system for each file to prevent concurrent writes
+let receiverFileCounter = 0; // Counter for file numbers to avoid duplicates
 
-function handleRemoteData(data) {
+// Process write queue for a specific file
+async function processWriteQueue(queueKey, actualFileName, originalFileName, transferId) {
+  const queue = fileWriteQueues[queueKey];
+  if (!queue || queue.isProcessing || queue.items.length === 0) {
+    return;
+  }
+
+  queue.isProcessing = true;
+
+  while (queue.items.length > 0) {
+    const { combined, receivedChunks } = queue.items.shift();
+    
+    try {
+      await window.electronAPI.appendFileChunk(actualFileName, combined, state.saveDirectory);
+
+      // Send acknowledgment only if receivedChunks is provided (every 20 chunks)
+      if (receivedChunks !== null && receivedChunks !== undefined) {
+        if (state.remoteConnection && state.remoteConnection.open) {
+          state.remoteConnection.send({
+            type: 'chunk-ack',
+            fileName: originalFileName || fileName,
+            transferId: transferId,
+            receivedChunks: receivedChunks,
+          });
+          console.log(`ACK sent for ${originalFileName || fileName} (${transferId}): ${receivedChunks} chunks`);
+        }
+      }
+    } catch (error) {
+      console.error(`Failed to write chunk for ${fileName}:`, error);
+      appuiToast.error(`Error writing ${fileName}: ${error.message}`, 5000);
+      // Continue processing remaining items even if one fails
+    }
+  }
+
+  queue.isProcessing = false;
+}
+
+async function handleRemoteData(data) {
   console.log('Received data from sender:', data);
 
   // Handle disconnect notification from sender
@@ -1134,22 +1223,47 @@ function handleRemoteData(data) {
 
   // Handle file metadata
   if (data.type === 'file-meta') {
-    const fileCount = Object.keys(incomingFiles).length + 1;
+    receiverFileCounter++; // Increment counter for each new file
+    const fileCount = receiverFileCounter;
+    const transferId = data.transferId; // Use unique transfer ID from sender
 
-    incomingFiles[data.fileName] = {
+    incomingFiles[transferId] = {
       totalChunks: data.totalChunks,
       receivedChunks: 0,
       fileSize: data.fileSize,
       fileNumber: fileCount,
       receivedBytes: 0,
       streaming: true, // Use streaming mode for all files
+      bufferQueue: [], // Buffer for batching writes
+      bufferedBytes: 0, // Track buffered size
+      startTime: Date.now(),
+      lastUpdateTime: 0, // Set to 0 so first update happens immediately
+      originalFileName: data.fileName, // Store original name for display
+      transferId: transferId, // Store transfer ID for tracking
     };
+
+    // Store actual file name for write queue (will be set after initFileStream)
+    // We'll use transferId as the key for write queues to support duplicate file names
 
     // Initialize file stream on disk
     window.electronAPI
       .initFileStream(data.fileName, state.saveDirectory)
-      .then(() => {
-        console.log(`File stream initialized for ${data.fileName}`);
+      .then((result) => {
+        console.log(`File stream initialized for ${data.fileName} (ID: ${transferId})`);
+        
+        // If backend renamed the file, store the actual name
+        if (result.fileName && result.fileName !== data.fileName) {
+          console.log(`File renamed: ${data.fileName} -> ${result.fileName}`);
+          // Store the actual file name being saved
+          incomingFiles[transferId].actualFileName = result.fileName;
+          // originalFileName remains as sender's name
+        }
+        
+        // Initialize write queue using transferId as key (not filename)
+        fileWriteQueues[transferId] = {
+          items: [],
+          isProcessing: false,
+        };
       })
       .catch((error) => {
         console.error(`Failed to initialize file stream: ${error.message}`);
@@ -1166,7 +1280,7 @@ function handleRemoteData(data) {
       <span class="file-icon">📄</span>
       <div class="file-info">
         <div class="file-name">${data.fileName}</div>
-        <div class="file-size">Receiving...</div>
+        <div class="file-size">0 Bytes / ${formatFileSize(data.fileSize)} (0%)</div>
       </div>
       <span class="file-status">⬇️</span>
     `;
@@ -1178,69 +1292,189 @@ function handleRemoteData(data) {
 
   // Handle file chunks
   if (data.type === 'file-chunk') {
-    const file = incomingFiles[data.fileName];
+    // Use transfer ID to find the correct file transfer
+    const transferId = data.transferId;
+    const file = incomingFiles[transferId];
+    
     if (file) {
+      // Use actual file name if it was renamed (e.g., duplicate handling)
+      const actualFileName = file.actualFileName || file.originalFileName;
+      
       // Decode base64 chunk back to Uint8Array using safe method
       const bytes = base64ToArrayBuffer(data.chunk);
+      
+      // Clear the base64 data from memory immediately after decoding
+      data.chunk = null;
 
-      // Stream directly to disk instead of accumulating in memory
-      window.electronAPI
-        .appendFileChunk(data.fileName, bytes, state.saveDirectory)
-        .then(() => {
-          file.receivedChunks++;
-          file.receivedBytes += bytes.length;
+      // Add to buffer queue
+      file.bufferQueue.push(bytes);
+      file.bufferedBytes += bytes.length;
+      file.receivedChunks++;
+      file.receivedBytes += bytes.length;
 
-          const progress = Math.round((file.receivedBytes / file.fileSize) * 100);
+      const progress = Math.round((file.receivedBytes / file.fileSize) * 100);
+      const now = Date.now();
+      const elapsed = (now - file.startTime) / 1000; // seconds
+      const speed = elapsed > 0 ? file.receivedBytes / elapsed : 0;
 
-          // Update UI progress every 10 chunks to improve performance
-          if (file.receivedChunks % 10 === 0 || file.receivedChunks === file.totalChunks) {
-            updateFileProgress({
-              currentFile: file.fileNumber,
-              fileName: data.fileName,
-              receivedBytes: file.receivedBytes,
-              totalBytes: file.fileSize,
-              progress: progress,
-            });
-          }
+      // Send ACK every 20 chunks or on last chunk (synchronized with sender WINDOW_SIZE)
+      const shouldSendAck = (file.receivedChunks % 20 === 0) || file.receivedChunks === file.totalChunks;
+      
+      // Flush buffer more frequently (1MB) to prevent memory issues
+      const shouldFlush = file.bufferedBytes >= 1024 * 1024 || file.receivedChunks === file.totalChunks;
 
-          // Log progress less frequently (every 50 chunks)
-          if (file.receivedChunks % 50 === 0 || file.receivedChunks === file.totalChunks) {
-            console.log(
-              `Receiving ${data.fileName}: ${file.receivedChunks}/${file.totalChunks} chunks (${progress}%) - streaming to disk`
-            );
-          }
-        })
-        .catch((error) => {
-          console.error(`Failed to write chunk for ${data.fileName}:`, error);
-          appuiToast.error(`Error writing ${data.fileName}: ${error.message}`, 5000);
+      // CRITICAL: Send ACK immediately to prevent sender timeout (do NOT wait for disk write)
+      if (shouldSendAck) {
+        if (state.remoteConnection && state.remoteConnection.open) {
+          state.remoteConnection.send({
+            type: 'chunk-ack',
+            fileName: file.originalFileName,
+            transferId: file.transferId,
+            receivedChunks: file.receivedChunks,
+          });
+          console.log(`ACK sent for ${file.originalFileName} (${file.transferId}): ${file.receivedChunks} chunks`);
+        }
+      }
+
+      // Update UI every 100ms for smooth progress feedback
+      const timeSinceLastUpdate = now - file.lastUpdateTime;
+      if (timeSinceLastUpdate >= 100) {
+        file.lastUpdateTime = now;
+        updateFileProgress({
+          currentFile: file.fileNumber,
+          fileName: data.fileName,
+          receivedBytes: file.receivedBytes,
+          totalBytes: file.fileSize,
+          progress: progress,
+          speed: speed,
         });
+      }
+
+      if (shouldFlush) {
+        // CRITICAL: Apply backpressure if write queue is too full to prevent memory overflow
+        const queue = fileWriteQueues[transferId];
+        if (queue && queue.items.length > 5) {
+          // If queue is very full, wait briefly for it to drain (non-blocking)
+          let waitCount = 0;
+          while (queue.items.length > 3 && queue.isProcessing && waitCount < 100) {
+            await new Promise(resolve => setTimeout(resolve, 10));
+            waitCount++;
+          }
+        }
+        
+        // Merge all buffered chunks into one
+        const combined = mergeBuffers(file.bufferQueue);
+        
+        // Clear buffer immediately to prevent re-processing
+        file.bufferQueue = [];
+        file.bufferedBytes = 0;
+
+        // Add to write queue instead of writing directly (use transferId as key)
+        if (!fileWriteQueues[transferId]) {
+          fileWriteQueues[transferId] = { items: [], isProcessing: false };
+        }
+        
+        // Don't send ACK here - already sent above
+        fileWriteQueues[transferId].items.push({
+          combined: combined,
+          receivedChunks: null, // ACK already sent immediately above
+        });
+
+        // Start processing the queue (non-blocking)
+        // Pass transferId, actual file name, original file name for ACK
+        processWriteQueue(transferId, actualFileName, file.originalFileName, file.transferId);
+      }
     }
     return;
   }
 
   // Handle file complete
   if (data.type === 'file-complete') {
-    const file = incomingFiles[data.fileName];
+    const transferId = data.transferId;
+    const file = incomingFiles[transferId];
+    
     if (file) {
+      const actualFileName = file.actualFileName || file.originalFileName;
+      
+      console.log(`[FILE-COMPLETE] Received for ${file.originalFileName} (${transferId})`);
+      
+      // Force final progress update to 100%
+      updateFileProgress({
+        currentFile: file.fileNumber,
+        fileName: file.originalFileName,
+        receivedBytes: file.fileSize,
+        totalBytes: file.fileSize,
+        progress: 100,
+        speed: 0,
+      });
+      
+      // Wait for write queue to finish processing (use transferId as key) with timeout
+      const queue = fileWriteQueues[transferId];
+      if (queue) {
+        console.log(`[FILE-COMPLETE] Waiting for write queue to finish for ${file.originalFileName}`);
+        let waitCount = 0;
+        const maxWait = 200; // 10 seconds max wait (200 * 50ms)
+        while ((queue.items.length > 0 || queue.isProcessing) && waitCount < maxWait) {
+          await new Promise(resolve => setTimeout(resolve, 50));
+          waitCount++;
+        }
+        if (waitCount >= maxWait) {
+          console.warn(`[FILE-COMPLETE] Timeout waiting for write queue for ${file.originalFileName}`);
+        } else {
+          console.log(`[FILE-COMPLETE] Write queue finished for ${file.originalFileName}`);
+        }
+      }
+      
       // Finalize the file stream (already saved incrementally to disk)
+      console.log(`[FILE-COMPLETE] Finalizing file: ${actualFileName}`);
       window.electronAPI
-        .finalizeFile(data.fileName, state.saveDirectory)
+        .finalizeFile(actualFileName, state.saveDirectory)
         .then((result) => {
+          console.log(`[FILE-COMPLETE] Finalized successfully: ${actualFileName}`, result);
           // Update UI to show file complete
           const fileList = document.getElementById('received-files-list');
           const fileItem = fileList.querySelector(`[data-file-number="${file.fileNumber}"]`);
           if (fileItem) {
             const sizeElement = fileItem.querySelector('.file-size');
             const statusElement = fileItem.querySelector('.file-status');
+            const fileNameElement = fileItem.querySelector('.file-name');
             if (sizeElement) {
               const savePath = result.path || state.saveDirectory || 'Downloads folder';
               sizeElement.textContent = `${formatFileSize(file.fileSize)} - Saved to ${savePath}`;
+              console.log(`[FILE-COMPLETE] UI updated with path: ${savePath}`);
             }
-            if (statusElement) statusElement.textContent = '✅';
+            if (statusElement) {
+              statusElement.textContent = '✅';
+              console.log(`[FILE-COMPLETE] Status updated to ✅`);
+            }
+            // Update displayed file name if it was renamed
+            if (fileNameElement && actualFileName !== file.originalFileName) {
+              fileNameElement.textContent = actualFileName;
+              fileNameElement.title = `Original: ${file.originalFileName}`;
+            }
+          } else {
+            console.error(`[FILE-COMPLETE] Could not find file item for file number ${file.fileNumber}`);
           }
 
-          delete incomingFiles[data.fileName];
-          appuiToast.success(`${data.fileName} received successfully!`, 4000);
+          // Clean up tracking objects and free memory
+          if (file.bufferQueue) {
+            file.bufferQueue = [];
+          }
+          delete incomingFiles[transferId];
+          delete fileWriteQueues[transferId];
+          
+          // Force garbage collection hint (only if exposed)
+          if (typeof window !== 'undefined' && window.gc) {
+            try {
+              window.gc();
+            } catch (e) {
+              // Ignore if gc not available
+            }
+          }
+          
+          const displayName = actualFileName !== file.originalFileName ? 
+            `${actualFileName} (renamed from ${file.originalFileName})` : actualFileName;
+          appuiToast.success(`${displayName} received successfully!`, 4000);
 
           // Check if all files received
           if (Object.keys(incomingFiles).length === 0) {
@@ -1248,9 +1482,23 @@ function handleRemoteData(data) {
           }
         })
         .catch((error) => {
-          console.error('Failed to finalize file:', error);
-          appuiToast.error(`Failed to save ${data.fileName}: ${error.message}`, 5000);
+          console.error(`[FILE-COMPLETE] Failed to finalize file ${file.originalFileName}:`, error);
+          appuiToast.error(`Failed to save ${file.originalFileName}: ${error.message}`, 5000);
+          
+          // Still update UI to show there was an issue but file transfer completed
+          const fileList = document.getElementById('received-files-list');
+          const fileItem = fileList.querySelector(`[data-file-number="${file.fileNumber}"]`);
+          if (fileItem) {
+            const sizeElement = fileItem.querySelector('.file-size');
+            const statusElement = fileItem.querySelector('.file-status');
+            if (sizeElement) {
+              sizeElement.textContent = `${formatFileSize(file.fileSize)} - Error saving file`;
+            }
+            if (statusElement) statusElement.textContent = '❌';
+          }
         });
+    } else {
+      console.error(`[FILE-COMPLETE] File not found in tracking: ${transferId}`);
     }
     return;
   }
@@ -1554,9 +1802,11 @@ if (buttons.sendFiles) {
       buttons.sendFiles.textContent = '⏳ Sending...';
       console.log('Starting file transfer for:', state.selectedFilePaths);
       if (state.transferType === 'local') {
+        // Reset local transfer state for new transfer
+        state.localTransferState = {};
         await window.electronAPI.sendFiles(state.selectedFilePaths);
       } else if (state.transferType === 'remote' && state.remoteConnection) {
-        sendFilesToRemote(state.selectedFilePaths);
+        await sendFilesToRemote(state.selectedFilePaths);
       }
       console.log('Files sent successfully!');
     } catch (error) {
@@ -1577,9 +1827,12 @@ async function sendFilesToRemote(selectedFilePaths) {
     state.isTransferring = false;
     return;
   }
-  const CHUNK_SIZE = 64 * 1024;
+  const CHUNK_SIZE = 256 * 1024; // 256KB chunks for faster transfer
+  const WINDOW_SIZE = 20; // Send 20 chunks, then wait for ACK
+  const ACK_INTERVAL = 20; // Send ACK every 20 chunks
   let successCount = 0;
   let failCount = 0;
+  const sendingFiles = {}; // Track acknowledgment state per file
 
   for (let fileIndex = 0; fileIndex < selectedFilePaths.length; fileIndex++) {
     const filePath = selectedFilePaths[fileIndex];
@@ -1588,67 +1841,140 @@ async function sendFilesToRemote(selectedFilePaths) {
 
     try {
       filename = filePath.split(/[/\\]/).pop();
+      
+      // Generate unique transfer ID to handle sending same file multiple times
+      const transferId = `${filename}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
       // Get file size first
       const fileSize = await window.electronAPI.getFileSize(filePath);
       const totalChunks = Math.ceil(fileSize / CHUNK_SIZE);
 
-      // Send file metadata
+      // Send file metadata with unique transfer ID
       state.remoteConnection.send({
         type: 'file-meta',
         fileName: filename,
+        transferId: transferId,
         fileSize: fileSize,
         totalChunks: totalChunks,
       });
 
-      console.log(`Sending ${filename}: ${totalChunks} chunks, ${fileSize} bytes`);
+      console.log(`Sending ${filename} (ID: ${transferId}): ${totalChunks} chunks, ${fileSize} bytes`);
+
+      // Initialize flow control for this file using transfer ID
+      sendingFiles[transferId] = {
+        fileName: filename,
+        acknowledgedChunks: 0,
+        ackPromise: null,
+        ackResolve: null,
+        startTime: Date.now(),
+        lastUpdateTime: Date.now(),
+      };
+
+      // Set up ONE acknowledgment listener (not per file)
+      if (!state.remoteConnection._hasAckListener) {
+        state.remoteConnection.on('data', (data) => {
+          if (data.type === 'chunk-ack') {
+            const file = sendingFiles[data.transferId];
+            if (file) {
+              console.log(`ACK received for ${data.transferId}: ${data.receivedChunks} chunks`);
+              file.acknowledgedChunks = data.receivedChunks;
+              if (file.ackResolve) {
+                file.ackResolve();
+                file.ackResolve = null;
+              }
+            }
+          }
+        });
+        state.remoteConnection._hasAckListener = true;
+      }
 
       // Send file chunks by reading stream
       let offset = 0;
       let sentBytes = 0;
 
       for (let i = 0; i < totalChunks; i++) {
-        // Read chunk from file stream
+        // Flow control: wait if we're too far ahead of receiver
+        if (i > 0 && i % WINDOW_SIZE === 0) {
+          const file = sendingFiles[transferId];
+          const minRequiredAck = i - WINDOW_SIZE; // Must have ACK for at least WINDOW_SIZE chunks ago
+          
+          // Wait for receiver to catch up with timeout
+          let waitCount = 0;
+          while (file.acknowledgedChunks < minRequiredAck && waitCount < 500) {
+            await new Promise(resolve => setTimeout(resolve, 10));
+            waitCount++;
+          }
+          
+          if (waitCount >= 500) {
+            console.warn(`Timeout waiting for ACK at chunk ${i}. Expected: ${minRequiredAck}, Got: ${file.acknowledgedChunks}`);
+          }
+        }
+
+        // Read chunk from file stream (one by one, sequentially)
         const result = await window.electronAPI.readFileChunk(filePath, offset, CHUNK_SIZE);
 
         // Convert chunk to base64 for transmission using safe method
         const base64Chunk = arrayBufferToBase64(result.chunk);
 
+        // Send chunk sequentially - wait for each send to complete
         state.remoteConnection.send({
           type: 'file-chunk',
           fileName: filename,
+          transferId: transferId,
           chunkIndex: i,
           chunk: base64Chunk,
         });
+        
+        // Small delay between chunks to ensure sequential processing and prevent overwhelming receiver
+        await new Promise(resolve => setTimeout(resolve, 1));
 
         sentBytes += result.bytesRead;
-        const progress = Math.round((sentBytes / fileSize) * 100);
+        offset += result.bytesRead;
 
-        // Update UI progress every 10 chunks to improve performance
-        if (i % 10 === 0 || i === totalChunks - 1) {
+        // Update UI every 300ms or last chunk (matches receiver update rate)
+        const now = Date.now();
+        const timeSinceLastUpdate = now - sendingFiles[transferId].lastUpdateTime;
+        if (timeSinceLastUpdate >= 300 || i === totalChunks - 1) {
+          sendingFiles[transferId].lastUpdateTime = now;
+          const progress = Math.round((sentBytes / fileSize) * 100);
+          const elapsed = (now - sendingFiles[transferId].startTime) / 1000;
+          const speed = elapsed > 0 ? sentBytes / elapsed : 0;
+          
           updateFileProgress({
             currentFile: currentFileNumber,
             fileName: filename,
             sentBytes: sentBytes,
             totalBytes: fileSize,
             progress: progress,
+            speed: speed,
           });
         }
-
-        // Log progress less frequently (every 50 chunks)
-        if (i % 50 === 0 || i === totalChunks - 1) {
-          console.log(`Sent chunk ${i + 1}/${totalChunks} for ${filename} (${progress}%)`);
-        }
-
-        offset += result.bytesRead;
       }
 
-      // Send file complete
+      // Wait for final acknowledgment before marking complete
+      const finalTarget = totalChunks;
+      let finalWaitCount = 0;
+      while (sendingFiles[transferId].acknowledgedChunks < finalTarget && finalWaitCount < 300) {
+        await new Promise(resolve => setTimeout(resolve, 10));
+        finalWaitCount++;
+      }
+      
+      if (finalWaitCount >= 300) {
+        console.warn(`Final ACK timeout for ${filename} (ID: ${transferId}), received ${sendingFiles[transferId].acknowledgedChunks}/${finalTarget}`);
+      } else {
+        console.log(`All chunks acknowledged for ${filename} (ID: ${transferId})`);
+      }
+
+      // Send file complete with transferId
       state.remoteConnection.send({
         type: 'file-complete',
         fileName: filename,
+        transferId: transferId,
         fileSize: fileSize,
       });
+
+      // Clean up flow control state
+      delete sendingFiles[transferId];
 
       // Mark file as complete in UI
       const fileItems = document.querySelectorAll('#file-list .file-item');
@@ -1725,7 +2051,14 @@ function updateFileProgress(progress) {
     }
 
     const bytes = progress.sentBytes || progress.receivedBytes || 0;
-    sizeElement.textContent = `${formatFileSize(bytes)} / ${formatFileSize(progress.totalBytes)} (${progress.progress}%)`;
+    let statusText = `${formatFileSize(bytes)} / ${formatFileSize(progress.totalBytes)} (${progress.progress}%)`;
+    
+    // Add speed if available
+    if (progress.speed && progress.speed > 0) {
+      statusText += ` • ${formatFileSize(progress.speed)}/s`;
+    }
+    
+    sizeElement.textContent = statusText;
 
     if (progress.progress === 100) {
       statusElement.textContent = state.currentMode === 'sender' ? '✅' : '⏳';
